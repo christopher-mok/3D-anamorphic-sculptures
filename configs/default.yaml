@@ -1,0 +1,186 @@
+# Default ("Medium") configuration. Other presets are deep-merged on top of this file.
+seed: 0
+device: cuda
+output_root: outputs
+cache_dir: cache
+
+# Axis-aligned sculpture bounding volume B (world units).
+bounding_volume:
+  min: [-1.0, -1.0, -1.0]
+  max: [1.0, 1.0, 1.0]
+  # SINGLE VIEW ONLY: do not bound the camera-facing axis. B becomes the box around the
+  # camera frustum between view_axis_near and view_axis_far (distance from the camera),
+  # so pieces may move much closer to / farther from the camera than the default cube.
+  unbounded_view_axis: false
+  view_axis_near: 1.5
+  view_axis_far: 12.0
+
+# One camera per target image. Defaults: two views 90 degrees apart, the
+# bounding volume filling ~90% of each image.
+cameras:
+  - {position: [0.0, 0.0, 5.0], look_at: [0.0, 0.0, 0.0], up: [0.0, 1.0, 0.0], fov_y_deg: 25.0, near: 0.1, far: 20.0}
+  - {position: [5.0, 0.0, 0.0], look_at: [0.0, 0.0, 0.0], up: [0.0, 1.0, 0.0], fov_y_deg: 25.0, near: 0.1, far: 20.0}
+
+# Safety bound only. Piece count is never part of any objective.
+max_objects: 200
+
+# Isotropic scale range, expressed as the world-space bounding-sphere radius
+# of an instance (canonical meshes have radius 1).
+scale:
+  min: 0.04
+  max: 0.6
+  mode: free                # free | fixed. fixed: every instance has radius `fixed`; objects that must
+  fixed: 0.15               #   look bigger have to move toward the camera instead of growing
+
+meshes:
+  extensions: [".obj", ".ply", ".stl", ".glb", ".gltf", ".off"]
+  proxy_max_faces: 8000     # rendering proxy
+  coarse_max_faces: 1500    # coarse proxy used for candidate screening
+  surface_samples: 1024
+  sdf_resolution: 64        # canonical model SDF grid (collisions + SDF ray method)
+  collision_points: 1024    # proxy vertices + edge midpoints + surface samples per model
+  sdf_padding: 0.1
+
+silhouette_bank:
+  num_orientations: 192
+  resolution: 64
+  descriptor_resolution: 16
+  neighbors: 8
+
+targets:
+  threshold: 0.5
+  invert: auto              # auto | true | false  (true: dark pixels are foreground)
+  pad_fraction: 0.0         # extra empty border added when letterboxing to square
+  working_resolution: 256
+
+hull:
+  resolution: 128           # 256 for high quality
+  mode: strict              # strict | relaxed
+  relaxed_dilation_voxels: 2
+  warn_coverage_bound: 0.9
+  compatibility_resolution: 256
+
+loss:
+  w_cov: 1.0
+  w_neg: 4.0
+  levels: [32, 64, 128, 256]
+  coarse_weights: [1.0, 0.6, 0.3, 0.1]   # weights at progress = 0
+  fine_weights: [0.1, 0.3, 0.6, 1.0]     # weights at progress = 1
+
+constraints:
+  lambda_contain: 300.0
+  lambda_collision: 100.0
+  hard_collisions: true       # reject / cut colliding placements where a method supports it
+  lambda_scale: 10.0
+  containment_tolerance: 0.02   # world units outside Omega tolerated in evaluation
+  collision_margin: 0.0025      # required clearance (world units); closer pairs count as intersecting
+  contain_samples: 128          # surface samples per object used in losses
+  collision_samples: 128        # collision points used by the penalties (hard checks use all)
+  resolve_intersections: true   # shared final stage: separate / shrink / remove until intersection-free
+  resolve_rounds: 3
+
+# Piece-type diversity ("randomness" = normalized entropy of the per-type counts).
+# weight > 0 adds  weight * KL(counts || target) / log M  to the objective: beam children are
+# scored with it, and a shared final swap stage (all methods) changes over-used types into
+# under-used ones whenever the image loss allows it.
+diversity:
+  weight: 0.0
+  target: uniform           # uniform | {mesh_name: relative weight, ...}
+  swap_stage: true
+  max_swaps: 80
+  swap_steps: 12
+  types_per_object: 3       # under-represented types tried for each swapped piece
+  orientations_per_type: 3  # silhouette-compatible bank orientations per tried type
+
+refine:
+  lr_translation: 0.01
+  lr_rotation: 0.03
+  lr_log_scale: 0.02
+
+evaluation:
+  resolution: 512
+  selection_metric: min_view_iou   # min_view_iou | mean_iou | weighted
+  weighted: {min_view_iou: 0.7, mean_iou: 0.3, spill: -1.0}
+
+progress:
+  preview_resolution: 128
+  preview_interval_s: 2.0
+  checkpoint_interval_s: 30.0
+
+# ---------------------------------------------------------------- Method 1
+beam:
+  max_runtime_s: 300
+  max_renderer_calls: 200000
+  beam_width: 4
+  candidates_per_branch: 512
+  candidate_resolution: 64
+  utility_top_k: 64           # candidates passed from utility ranking to exact loss
+  lookahead_top_k: 16
+  lookahead_steps: 15
+  lookahead_resolution: 128
+  children_per_parent: 4
+  multi_add: true
+  multi_add_max: 4
+  multi_add_overlap: 0.1      # max allowed footprint overlap fraction in any view
+  multi_add_dilation_px: 2
+  explore_probability: 0.1
+  bank_probability: 0.8
+  global_refine_every: 3
+  global_refine_steps: 60
+  repair: true
+  repair_max_objects: 6
+  repair_candidates: 128
+  diversity_iou: 0.995        # beam entries whose renders are more similar than this are pruned
+  target_iou: 0.97
+  patience_rounds: 6
+  min_improvement: 1.0e-4
+  final_refine_steps: 150
+
+# ---------------------------------------------------------------- Method 2
+column_generation:
+  max_runtime_s: 300
+  solver: auto                # auto | gurobi | scipy
+  resolution: 48              # MILP pixel grid
+  render_resolution: 96       # columns are rendered here and area-pooled to `resolution`
+  coverage_threshold: 0.5
+  initial_columns: 3000
+  seed_assembly: null         # optional path to a result.json whose objects become initial columns
+  pricing_rounds: 30
+  pricing_batch: 256
+  pricing_steps: 30
+  columns_per_round: 96
+  min_reduced_profit: 1.0e-4
+  patience_rounds: 3
+  max_columns: 12000
+  dual_blend: 0.15            # blend of residual utility into dual map (exploration)
+  lp_time_limit_s: 60
+  milp_time_limit_s: 120
+  milp_gap: 0.002
+  max_conflict_rounds: 10
+  polish_steps: 200
+
+# ---------------------------------------------------------------- Method 3
+sdf_ray:
+  max_runtime_s: 300
+  initial_objects: 48
+  init_pool_factor: 8
+  ray_resolution: 128
+  rays_per_view: 3072
+  bg_rays_per_view: 1536
+  samples_per_ray: 32
+  iterations: 800
+  lr_translation: 0.01
+  lr_rotation: 0.03
+  lr_log_scale: 0.02
+  tau_start: 0.08             # ray softplus temperature (world units)
+  tau_end: 0.01
+  union_temperature: 0.02     # softmin over objects
+  ray_temperature: 0.02       # softmin along a ray
+  w_ray: 1.0
+  w_bg: 2.0
+  lambda_collision: 30.0      # clearance weight during ray packing (polish uses constraints.lambda_collision)
+  reseed_every: 100
+  reseed_fraction: 0.15
+  add_objects_on_plateau: 16
+  plateau_tolerance: 0.02
+  polish_steps: 250

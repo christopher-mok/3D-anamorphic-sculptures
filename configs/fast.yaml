@@ -1,0 +1,51 @@
+# Fast preset: quick turnaround for development / UI demos. Merged over default.yaml.
+targets:
+  working_resolution: 128
+hull:
+  resolution: 96
+  compatibility_resolution: 128
+loss:
+  levels: [32, 64, 128]
+  coarse_weights: [1.0, 0.5, 0.2]
+  fine_weights: [0.2, 0.5, 1.0]
+silhouette_bank:
+  num_orientations: 128
+meshes:
+  sdf_resolution: 48
+evaluation:
+  resolution: 256
+max_objects: 120
+
+beam:
+  max_runtime_s: 60
+  beam_width: 2
+  candidates_per_branch: 256
+  utility_top_k: 32
+  lookahead_top_k: 8
+  lookahead_steps: 10
+  lookahead_resolution: 64
+  global_refine_steps: 40
+  repair_max_objects: 3
+  final_refine_steps: 60
+
+column_generation:
+  max_runtime_s: 60
+  resolution: 32
+  render_resolution: 64
+  initial_columns: 1500
+  pricing_rounds: 8
+  pricing_batch: 128
+  pricing_steps: 20
+  milp_time_limit_s: 30
+  polish_steps: 80
+
+sdf_ray:
+  max_runtime_s: 60
+  initial_objects: 40
+  ray_resolution: 96
+  rays_per_view: 2048
+  bg_rays_per_view: 1024
+  samples_per_ray: 24
+  iterations: 300
+  reseed_every: 75
+  polish_steps: 100

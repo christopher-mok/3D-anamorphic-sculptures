@@ -1,0 +1,54 @@
+# High-quality preset. Merged over default.yaml.
+targets:
+  working_resolution: 512
+hull:
+  resolution: 256
+  compatibility_resolution: 512
+loss:
+  levels: [32, 64, 128, 256, 512]
+  coarse_weights: [1.0, 0.7, 0.4, 0.2, 0.1]
+  fine_weights: [0.05, 0.1, 0.3, 0.6, 1.0]
+silhouette_bank:
+  num_orientations: 256
+meshes:
+  sdf_resolution: 128
+evaluation:
+  resolution: 1024
+max_objects: 400
+
+beam:
+  max_runtime_s: 1800
+  max_renderer_calls: 2000000
+  beam_width: 8
+  candidates_per_branch: 1024
+  utility_top_k: 96
+  lookahead_top_k: 32
+  lookahead_steps: 25
+  lookahead_resolution: 256
+  global_refine_every: 4
+  global_refine_steps: 100
+  repair_max_objects: 10
+  patience_rounds: 10
+  final_refine_steps: 300
+
+column_generation:
+  max_runtime_s: 1800
+  resolution: 64
+  render_resolution: 128
+  initial_columns: 6000
+  pricing_rounds: 80
+  pricing_batch: 512
+  pricing_steps: 40
+  max_columns: 30000
+  milp_time_limit_s: 600
+  polish_steps: 400
+
+sdf_ray:
+  max_runtime_s: 1800
+  initial_objects: 80
+  ray_resolution: 256
+  rays_per_view: 6144
+  bg_rays_per_view: 3072
+  samples_per_ray: 48
+  iterations: 2500
+  polish_steps: 500
