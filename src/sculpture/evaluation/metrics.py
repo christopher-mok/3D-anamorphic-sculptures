@@ -36,8 +36,16 @@ def mask_metrics(R: torch.Tensor, I: torch.Tensor) -> dict:
 def evaluate_assembly(ctx, assembly: Assembly, runtime_s: float = 0.0, renderer_calls: int = 0) -> dict:
     res = int(ctx.cfg.evaluation.resolution)
     a = assembly.detach()
-    R = ctx.render(a, res, lod="proxy")
+    # final fidelity is measured with the ORIGINAL meshes substituted back (what gets exported /
+    # fabricated); the proxy result is reported alongside to expose the LOD substitution error
+    lod = str(ctx.cfg.evaluation.get("lod", "original"))
+    R = ctx.render(a, res, lod=lod)
     m = mask_metrics(R, ctx.targets.mask(res))
+    if lod != "proxy":
+        mp = mask_metrics(ctx.render(a, res, lod="proxy"), ctx.targets.mask(res))
+        m["proxy_min_view_iou"] = mp["min_view_iou"]
+        m["lod_substitution_delta"] = m["min_view_iou"] - mp["min_view_iou"]
+    m["eval_lod"] = lod
     Rw = ctx.render(a, ctx.working_resolution)
     m["loss"] = float(ctx.loss(Rw, progress=1.0))
     m.update(ctx.constraints.report(a))

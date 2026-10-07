@@ -18,7 +18,7 @@ from .sdf import MeshSDFLibrary, compute_mesh_sdf
 log = logging.getLogger(__name__)
 
 DEFAULT_EXTENSIONS = (".obj", ".ply", ".stl", ".glb", ".gltf", ".off")
-_PREPROCESS_VERSION = 2
+_PREPROCESS_VERSION = 4
 
 
 def _file_hash(path: Path, extra: str) -> str:
@@ -83,6 +83,8 @@ class MeshEntry:
             "dims": self.dims,
             "original_dims": self.data["original_extent"].astype(float).tolist(),
             "watertight": bool(self.data["watertight"]),
+            "proxy_error": float(self.data.get("proxy_error", 0.0)),
+            "coarse_triangles": int(len(self.data["coarse_faces"])),
         }
 
 
@@ -105,6 +107,9 @@ class MeshLibrary:
         self.radii = torch.ones(len(entries), device=self.device)
         self.bbox_min = torch.stack([torch.from_numpy(e.data["bbox_min"]) for e in entries]).to(self.device)
         self.bbox_max = torch.stack([torch.from_numpy(e.data["bbox_max"]) for e in entries]).to(self.device)
+        # LOD approximation errors (canonical units): widen clearance margins so optimizing on
+        # proxies cannot hide an intersection of the original meshes
+        self.proxy_error = torch.tensor([float(e.data.get("proxy_error", 0.0)) for e in entries], device=self.device)
         n_coll = int(cfg.get("collision_points", 1024))
         self.collision_points = torch.stack([torch.from_numpy(_collision_points(e.data, n_coll)) for e in entries]).to(self.device)
         self._reference_points: dict[int, torch.Tensor] = {}
@@ -124,7 +129,8 @@ class MeshLibrary:
         if cache:
             cache.mkdir(parents=True, exist_ok=True)
         params = json.dumps(
-            {k: cfg.get(k) for k in ("proxy_max_faces", "coarse_max_faces", "surface_samples")} | {"v": _PREPROCESS_VERSION},
+            {k: cfg.get(k) for k in ("proxy_max_faces", "coarse_max_faces", "proxy_tolerance", "coarse_tolerance", "surface_samples")}
+            | {"v": _PREPROCESS_VERSION},
             sort_keys=True,
         )
         entries = []

@@ -30,13 +30,17 @@ class NvdiffrastRenderer:
     Gradients w.r.t. transformed vertices come from ``dr.antialias``.
     """
 
-    def __init__(self, library: MeshLibrary, device="cuda", max_batch_pixels: int = 1 << 24):
+    def __init__(self, library: MeshLibrary, device="cuda", max_batch_pixels: int = 1 << 24, max_triangles: int = 1_000_000):
         if dr is None:  # pragma: no cover
             raise ImportError(f"nvdiffrast is required for NvdiffrastRenderer: {_IMPORT_ERROR}")
         self.library = library
         self.device = torch.device(device)
         self.ctx = dr.RasterizeCudaContext(device=self.device)
         self.max_batch_pixels = max_batch_pixels
+        # the CUDA rasterizer overflows ("subtriangle count overflow" / illegal access) beyond a few
+        # million triangles per call: larger scenes (e.g. the original meshes) are rendered in
+        # chunks and composited with max (exact for binary silhouettes)
+        self.max_triangles = int(max_triangles)
         self.stats = RenderStats()
 
     # ------------------------------------------------------------ helpers
@@ -72,6 +76,26 @@ class NvdiffrastRenderer:
         self.stats.record("union", V, V * H * W)
         if len(assembly) == 0:
             return torch.zeros(V, H, W, device=self.device)
+        tri_counts = torch.tensor([len(self.library.proxy(m, lod)[1]) for m in range(len(self.library))], device=self.device)
+        per_inst = tri_counts[assembly.mesh_ids]
+        if int(per_inst.sum()) > self.max_triangles and len(assembly) > 1:
+            groups, cur, acc = [], [], 0
+            for i, n in enumerate(per_inst.tolist()):
+                if cur and acc + n > self.max_triangles:
+                    groups.append(cur)
+                    cur, acc = [], 0
+                cur.append(i)
+                acc += n
+            groups.append(cur)
+            out = None
+            for g in groups:
+                m = self._render_union(assembly[g], cameras, (H, W), lod)
+                out = m if out is None else torch.maximum(out, m)
+            return out
+        return self._render_union(assembly, cameras, (H, W), lod)
+
+    def _render_union(self, assembly: Assembly, cameras, resolution, lod: str) -> torch.Tensor:
+        H, W = resolution
         all_pos, all_tri, offset = [], [], 0
         for m in torch.unique(assembly.mesh_ids).tolist():
             idx = (assembly.mesh_ids == m).nonzero(as_tuple=True)[0]
@@ -98,25 +122,39 @@ class NvdiffrastRenderer:
         if N == 0:
             return torch.zeros(0, V, H, W, device=self.device)
         mvps = self._mvps(cameras, (H, W))
-        chunk = max(1, self.max_batch_pixels // (V * H * W))
+        pix_chunk = max(1, self.max_batch_pixels // (V * H * W))
         pieces, order = [], []
         for m in torch.unique(a.mesh_ids).tolist():
             idx_all = (a.mesh_ids == m).nonzero(as_tuple=True)[0]
-            for s0 in range(0, len(idx_all), chunk):
+            n_tri = len(self.library.proxy(m, lod)[1])
+            chunk = max(1, min(pix_chunk, self.max_triangles // max(1, n_tri * V)))
+            s0 = 0
+            while s0 < len(idx_all):
                 idx = idx_all[s0 : s0 + chunk]
-                world, faces = self._transformed(a, idx, m, lod)  # [k,Nv,3]
-                k = world.shape[0]
-                pos_h = torch.cat([world, torch.ones_like(world[..., :1])], dim=-1)
-                clip = torch.einsum("kni,vji->kvnj", pos_h, mvps).reshape(k * V, -1, 4).contiguous()
-                rast, _ = dr.rasterize(self.ctx, clip, faces, (H, W))
-                mask = (rast[..., 3:] > 0).float()
-                mask = dr.antialias(mask, rast, clip, faces)
-                pieces.append(mask[..., 0].flip(1).reshape(k, V, H, W))
+                try:
+                    pieces.append(self._instances_chunk(a, idx, m, lod, mvps, V, H, W))
+                except RuntimeError as exc:  # rasterizer buffer allocation failed: halve the batch
+                    if chunk > 1 and ("cudaMalloc" in str(exc) or "out of memory" in str(exc)):
+                        torch.cuda.empty_cache()
+                        chunk = max(1, chunk // 2)
+                        continue
+                    raise
                 order.append(idx)
+                s0 += len(idx)
         out = torch.cat(pieces)
         inv = torch.empty(N, dtype=torch.long, device=self.device)
         inv[torch.cat(order)] = torch.arange(N, device=self.device)
         return out[inv]
+
+    def _instances_chunk(self, a: Assembly, idx, m: int, lod: str, mvps, V: int, H: int, W: int) -> torch.Tensor:
+        world, faces = self._transformed(a, idx, m, lod)  # [k,Nv,3]
+        k = world.shape[0]
+        pos_h = torch.cat([world, torch.ones_like(world[..., :1])], dim=-1)
+        clip = torch.einsum("kni,vji->kvnj", pos_h, mvps).reshape(k * V, -1, 4).contiguous()
+        rast, _ = dr.rasterize(self.ctx, clip, faces, (H, W))
+        mask = (rast[..., 3:] > 0).float()
+        mask = dr.antialias(mask, rast, clip, faces)
+        return mask[..., 0].flip(1).reshape(k, V, H, W)
 
     # ------------------------------------------------------------ previews (server only)
     @torch.no_grad()

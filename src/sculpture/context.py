@@ -72,6 +72,8 @@ class ProblemContext:
     timings: dict = field(default_factory=dict)
     _bank: object = None
     _generator: object = None
+    _near_depth: float | None = None
+    _coarse_err: float = 0.0
 
     @property
     def num_views(self) -> int:
@@ -104,11 +106,37 @@ class ProblemContext:
             self._generator = CandidateGenerator(self)
         return self._generator
 
-    def render(self, assembly, resolution: int | None = None, lod: str = "proxy") -> torch.Tensor:
+    def pick_lod(self, assembly, resolution: int) -> str:
+        """Resolution-aware level of detail: the coarsest LOD whose worst-case projected
+        deviation (LOD error x largest instance scale x focal length / nearest depth) stays below
+        cfg.meshes.lod_pixel_tolerance pixels. Low-resolution screening / lookahead renders then
+        use the coarse mesh, high-resolution losses the precise proxy."""
+        if len(assembly) == 0:
+            return "coarse"
+        if self._near_depth is None:
+            bmin = torch.tensor(self.hull.bmin, dtype=torch.float32)
+            bmax = torch.tensor(self.hull.bmax, dtype=torch.float32)
+            near = []
+            for cam in self.cameras:
+                eye = torch.tensor(cam.eye, dtype=torch.float32)
+                near.append(float((eye - eye.clamp(bmin, bmax)).norm()))
+            self._near_depth = max(min(near), 0.25)
+            self._coarse_err = max(float(e.data.get("coarse_error", 0.0)) for e in self.library.entries)
+        tol = float(self.cfg.meshes.get("lod_pixel_tolerance", 0.5))
+        with torch.no_grad():
+            s_max = float(torch.exp(assembly.log_scale.max()))
+        f = max(c.focal_px(resolution) for c in self.cameras)
+        return "coarse" if self._coarse_err * s_max * f / self._near_depth <= tol else "proxy"
+
+    def render(self, assembly, resolution: int | None = None, lod: str = "auto") -> torch.Tensor:
         r = resolution or self.working_resolution
+        if lod == "auto":
+            lod = self.pick_lod(assembly, r)
         return self.renderer.render_silhouettes(assembly, self.cameras, (r, r), lod=lod)
 
-    def render_instances(self, assembly, resolution: int, lod: str = "proxy") -> torch.Tensor:
+    def render_instances(self, assembly, resolution: int, lod: str = "auto") -> torch.Tensor:
+        if lod == "auto":
+            lod = self.pick_lod(assembly, resolution)
         return self.renderer.render_instance_silhouettes(assembly, self.cameras, (resolution, resolution), lod=lod)
 
     def generator_torch(self, seed: int) -> torch.Generator:

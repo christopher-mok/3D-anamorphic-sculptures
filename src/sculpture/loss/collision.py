@@ -47,9 +47,17 @@ def _pair_terms(A: Assembly, B: Assembly, pairs: torch.Tensor, library, sdf_lib,
     pb = collision_points(B[ib], library, n)
     phi_b_at_a = sdf_lib.query_instances(B.mesh_ids[ib], Rb[ib], sb[ib], B.translation[ib], pa)
     phi_a_at_b = sdf_lib.query_instances(A.mesh_ids[ia], Ra[ia], sa[ia], A.translation[ia], pb)
-    va, vb = torch.relu(margin - phi_b_at_a), torch.relu(margin - phi_a_at_b)
+    # collision points live on the PROXY surface, which deviates from the original by up to
+    # proxy_error * scale: widen the margin by that amount for each side
+    err = getattr(library, "proxy_error", None)
+    if err is not None:
+        m_a = (margin + err[A.mesh_ids[ia]] * sa[ia].detach())[:, None]
+        m_b = (margin + err[B.mesh_ids[ib]] * sb[ib].detach())[:, None]
+    else:
+        m_a = m_b = margin
+    va, vb = torch.relu(m_a - phi_b_at_a), torch.relu(m_b - phi_a_at_b)
     penalty = (va ** 2).mean(-1) + (vb ** 2).mean(-1) + (va ** 2).amax(-1) + (vb ** 2).amax(-1)
-    violation = torch.maximum((margin - phi_b_at_a).amax(-1), (margin - phi_a_at_b).amax(-1))
+    violation = torch.maximum((m_a - phi_b_at_a).amax(-1), (m_b - phi_a_at_b).amax(-1))
     return penalty, violation
 
 

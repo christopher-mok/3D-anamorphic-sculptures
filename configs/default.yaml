@@ -34,8 +34,15 @@ scale:
 
 meshes:
   extensions: [".obj", ".ply", ".stl", ".glb", ".gltf", ".off"]
-  proxy_max_faces: 8000     # rendering proxy
-  coarse_max_faces: 1500    # coarse proxy used for candidate screening
+  # Precise level-of-detail approximations (adaptive quadric decimation): the smallest proxy whose
+  # two-sided surface deviation from the original is <= tolerance (fraction of the bounding radius).
+  # Optimization uses only the LODs; the original mesh is substituted back at the end
+  # (final intersection check, evaluation render, export).
+  proxy_tolerance: 0.003    # rendering / optimization proxy
+  proxy_max_faces: 20000
+  coarse_tolerance: 0.015   # coarse proxy for candidate screening and the silhouette bank
+  coarse_max_faces: 3000
+  lod_pixel_tolerance: 0.5  # renders use the coarse LOD when its worst-case projected error is below this (px)
   surface_samples: 1024
   sdf_resolution: 64        # canonical model SDF grid (collisions + SDF ray method)
   collision_points: 1024    # proxy vertices + edge midpoints + surface samples per model
@@ -100,6 +107,7 @@ refine:
 evaluation:
   resolution: 512
   selection_metric: min_view_iou   # min_view_iou | mean_iou | weighted
+  lod: original                    # geometry used for the final evaluation render (original | proxy)
   weighted: {min_view_iou: 0.7, mean_iou: 0.3, spill: -1.0}
 
 progress:

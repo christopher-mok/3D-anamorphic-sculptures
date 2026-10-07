@@ -32,7 +32,7 @@ def write_renders(ctx, assembly, folder, resolution: int | None = None) -> list[
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
     res = resolution or int(ctx.cfg.evaluation.resolution)
-    R = ctx.render(assembly.detach(), res).cpu().numpy()
+    R = ctx.render(assembly.detach(), res, lod=str(ctx.cfg.evaluation.get("lod", "original"))).cpu().numpy()
     T = ctx.targets.mask(res).cpu().numpy()
     out = []
     for v in range(R.shape[0]):

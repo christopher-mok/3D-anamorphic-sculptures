@@ -135,6 +135,34 @@ Now:
 * **Shared final stage** (`refinement/feasibility.py`, `constraints.resolve_intersections: true`): separate the involved pieces, then shrink or nudge the weaker piece of each remaining pair, and remove it only if nothing works. This stage checks the margin test **and** the dense reference, so every method ends intersection-free whatever the margin.
 * `metrics.collisions` is the reference count. `clearance_violations` counts pairs closer than the margin.
 
+## 5c. Complex meshes: precise LODs, original substituted back
+
+The optimizers never touch the full-resolution meshes. Each model gets two **precise level-of-detail approximations** (adaptive quadric decimation): the smallest mesh whose two-sided surface deviation from the original stays below a tolerance. The deviation is the 99.9th percentile of exact GPU point-to-triangle distances, in units of the bounding radius.
+
+| LOD | Tolerance | Used for |
+|---|---|---|
+| `proxy` | `meshes.proxy_tolerance: 0.003` (≤ 20k faces) | losses at the working resolution, refinement, polish, collision points |
+| `coarse` | `meshes.coarse_tolerance: 0.015` (≤ 3k faces) | candidate screening, silhouette bank, low-resolution lookahead |
+| `original` | — | final intersection check, final evaluation render, GLB export |
+
+* **Resolution-aware LOD** (`ctx.render(..., lod="auto")`): a render uses `coarse` when its worst-case projected error (LOD error × largest scale × focal length / nearest depth) is at most `meshes.lod_pixel_tolerance` (0.5 px), and `proxy` otherwise.
+* **Clearance margins** are widened by each piece's proxy error × scale, so optimizing on proxies cannot hide an intersection of the originals.
+* **Substitution at the end**: `reference_intersections` classifies dense original-mesh points against the other piece's **original** mesh in three tiers: the SDF grid; the proxy winding number for points farther than 2.5× the proxy error from its surface; and the exact winding number on the original for the rest. The final evaluation and renders use the original meshes. `metrics.proxy_min_view_iou` and `lod_substitution_delta` report the difference.
+* The renderer splits scenes above `max_triangles` (1M per rasterize call) into chunks composited with max. It also halves batches automatically on rasterizer allocation failures. Unchunked, the original meshes overflowed nvdiffrast ("subtriangle count overflow" / illegal memory access).
+
+Stress test (`python -m sculpture.cli make-demo --complex` writes a ~1M-triangle pool to `assets/models_complex`: 82k–330k triangles per model):
+
+| | Simple pool | Complex pool |
+|---|---|---|
+| proxy / coarse faces | ≤ 1.5k (exact) | 8k–16k (err 0.0012–0.0028) / 500–1000 (err ≤ 0.014) |
+| preprocessing (once, cached) | ~2 s | ~60 s |
+| render 100 instances: proxy vs original | — | 0.017 s vs 0.13 s per call (originals ~8× slower) |
+| Beam growth rounds in 30 s | 67 | 47 |
+| fast min-view IoU: beam / CG / SDF ray | 0.887 / 0.765 / 0.886 | 0.865 / 0.752 / 0.888 |
+| LOD substitution delta (original − proxy IoU) | 0 | ±0.0002 |
+| intersections of the originals (final) | 0 | 0 |
+| original-mesh intersection check, 100-piece overlap scene | — | 368 s → 16 s with the 3-tier check |
+
 ## 6. Running the methods
 
 ```bash

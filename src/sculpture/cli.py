@@ -52,6 +52,7 @@ def main(argv=None) -> int:
     p_cmp.add_argument("--methods", default=",".join(METHOD_NAMES), help="comma separated subset")
     p_demo = sub.add_parser("make-demo", help="write demo meshes and targets into assets/")
     p_demo.add_argument("--root", default="assets")
+    p_demo.add_argument("--complex", action="store_true", help="also write a ~1M-triangle stress-test pool to <root>/models_complex")
     args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.DEBUG if getattr(args, "verbose", False) else logging.INFO,
@@ -62,6 +63,10 @@ def main(argv=None) -> int:
 
         make_demo_models(Path(args.root) / "models")
         make_demo_targets(Path(args.root) / "targets")
+        if args.complex:
+            from .demo import make_complex_models
+
+            make_complex_models(Path(args.root) / "models_complex")
         print(f"demo assets written to {args.root}/models and {args.root}/targets")
         return 0
 

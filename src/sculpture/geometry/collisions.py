@@ -34,33 +34,61 @@ def pair_penetration(points_a: torch.Tensor, sdf_b_at_points_a: torch.Tensor) ->
 
 
 @torch.no_grad()
-def reference_intersections(a, library, max_faces: int = 20000) -> list[tuple[int, int]]:
-    """Accurate (slow) intersection check used for evaluation and verification.
+def reference_intersections(a, library, band_voxels: float = 1.0) -> list[tuple[int, int]]:
+    """Accurate intersection check against the ORIGINAL meshes ("substituted back").
 
-    For every broad-phase pair, dense points of each object's ORIGINAL mesh (surface
-    samples + all vertices + edge midpoints) are tested against the other mesh with the
-    exact generalized winding number (> 0.5 = inside). Meshes with more than
-    ``max_faces`` faces are tested against their rendering proxy instead.
+    Dense points of each piece's original mesh (surface samples + vertices + edge midpoints)
+    are classified against the other piece's original mesh in three tiers:
+      1. model SDF grid (built from the original): clearly inside (phi < -band) -> hit,
+         clearly outside (phi > band) -> skip;  band = 1 voxel + coarse-LOD error;
+      2. band points: generalized winding number against the PROXY, trusted when the point is
+         farther from the proxy surface than the proxy's measured deviation (then proxy and
+         original agree on inside/outside);
+      3. the remaining points (within the proxy error of its surface): exact winding number
+         against the full-resolution ORIGINAL mesh.
     Returns intersecting pairs (i < j).
     """
+    from .mesh_preprocess import point_triangle_distance
     from .sdf import winding_numbers
 
     if len(a) < 2:
         return []
+    sdf = library._sdf if library._sdf is not None else library.sdf()  # reuse the grids already in use
+    voxel = (sdf.hi - sdf.lo) / (sdf.resolution - 1)
     R, s, t, ids = a.rotation_matrices(), torch.exp(a.log_scale), a.translation, a.mesh_ids.tolist()
     pairs = broad_phase_pairs(t, s * library.radii[a.mesh_ids]).tolist()
     out = []
     for i, j in pairs:
         hit = False
         for p, q in ((i, j), (j, i)):
+            e = library.entries[ids[q]]
+            band = band_voxels * voxel + float(e.data.get("coarse_error", 0.0))
             world = library.reference_points(ids[p]) @ R[p].T * s[p] + t[p]
             local = (world - t[q]) @ R[q] / s[q]
-            near = local.norm(dim=-1) <= 1.0 + 1e-4  # canonical bounding sphere of q
-            if not near.any():
+            local = local[local.norm(dim=-1) <= 1.0 + 1e-4]  # canonical bounding sphere of q
+            if len(local) == 0:
                 continue
-            lod = "original" if library.entries[ids[q]].triangles <= max_faces else "proxy"
-            v, f = library.proxy(ids[q], lod)
-            if (winding_numbers(local[near], v, f.long(), chunk=2048).abs() > 0.5).any():
+            phi = sdf.query_local(ids[q], local)
+            if bool((phi < -band).any()):
+                hit = True
+                break
+            amb = local[phi.abs() <= band]
+            if len(amb) == 0:
+                continue
+            pv, pf = library.proxy(ids[q], "proxy")
+            perr = float(e.data.get("proxy_error", 0.0))
+            if perr > 0 and len(pf) < e.triangles:
+                w = winding_numbers(amb, pv, pf.long(), chunk=max(16, 4_000_000 // max(1, len(pf)))).abs()
+                d = torch.as_tensor(point_triangle_distance(amb, pv[pf.long()]), device=amb.device)
+                sure = d > 2.5 * perr + 1e-4  # margin over the 99.9th-percentile deviation
+                if bool(((w > 0.5) & sure).any()):
+                    hit = True
+                    break
+                amb = amb[~sure]
+                if len(amb) == 0:
+                    continue
+            v, f = library.proxy(ids[q], "original")
+            if bool((winding_numbers(amb, v, f.long(), chunk=max(16, 4_000_000 // max(1, len(f)))).abs() > 0.5).any()):
                 hit = True
                 break
         if hit:
