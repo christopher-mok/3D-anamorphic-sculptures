@@ -127,8 +127,12 @@ class BeamSearchOptimizer(OptimizationMethod):
         rl = int(cfg.lookahead_resolution)
         new_beam = []
         stats_total = {}
-        for e in self.beam:
-            if len(e.assembly) == 0:
+        # Only the best `refine_entries` entries are refined/repaired: profiling showed a full
+        # joint refinement costs ~3 growth rounds while adding little beyond what growth adds.
+        k_ref = int(cfg.get("refine_entries", 1))
+        ranked = sorted(self.beam, key=lambda e: e.score)
+        for rank, e in enumerate(ranked):
+            if len(e.assembly) == 0 or rank >= k_ref:
                 new_beam.append(e)
                 continue
             self.phase = "global_refine"
@@ -184,7 +188,9 @@ class BeamSearchOptimizer(OptimizationMethod):
                 self.check_cancel()
             self.beam = select_diverse(children + self.beam, int(cfg.beam_width), float(cfg.diversity_iou))
             self.iteration += 1
-            if int(cfg.global_refine_every) > 0 and self.iteration % int(cfg.global_refine_every) == 0:
+            every = int(cfg.global_refine_every)
+            stalled = self.beam and prev_best - min(e.score for e in self.beam) < float(cfg.min_improvement)
+            if every > 0 and (self.iteration % every == 0 or (stalled and cfg.get("refine_on_stall", True))):
                 self.refine_and_repair(gen)
                 self.beam.sort(key=lambda e: e.score)
             best = self.beam[0]

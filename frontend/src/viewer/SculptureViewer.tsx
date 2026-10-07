@@ -7,6 +7,7 @@ import { ErrorBoundary } from "../utils/ErrorBoundary";
 import { useElementSize } from "../utils/hooks";
 import { AssemblyMeshes } from "./AssemblyMeshes";
 import { BoundingVolume } from "./BoundingVolume";
+import { BoxBoundsGizmo, ViewAxisBounds } from "./BoundsGizmo";
 import { CameraFrustum } from "./CameraFrustum";
 import { HullMesh, type HullStyle } from "./HullMesh";
 import { cameraColor } from "./math";
@@ -19,6 +20,13 @@ export interface SceneData {
   /** Target image per camera (for frustum planes and the overlay). */
   targetImageUrls: (string | null)[];
   boundingVolume: BV;
+  /**
+   * Unbounded single-view mode (setup): B is the box around cameras[0]'s frustum
+   * between these distances; the frustum segment is drawn instead of the box.
+   */
+  viewAxis: { near: number; far: number } | null;
+  /** Bounds can be edited with gizmos (setup mode). */
+  boundsEditable: boolean;
   hullUrl: string | null;
   assembly: Assembly | null;
   meshUrlFor: (name: string) => string;
@@ -28,6 +36,8 @@ export interface SceneData {
 
 export interface ViewerSettings {
   showBounds: boolean;
+  /** Bounds gizmo handles (setup mode only). */
+  editBounds: boolean;
   showHull: boolean;
   hullStyle: HullStyle;
   showFrusta: boolean;
@@ -41,6 +51,7 @@ export interface ViewerSettings {
 
 export const DEFAULT_VIEWER_SETTINGS: ViewerSettings = {
   showBounds: true,
+  editBounds: true,
   showHull: false,
   hullStyle: "wireframe",
   showFrusta: true,
@@ -60,12 +71,14 @@ interface SculptureViewerProps {
   selectedCamera: number | null;
   onSelectCamera: (i: number | null) => void;
   onMoveCamera: (i: number, position: Vec3) => void;
+  onBoundsChange?: (volume: BV) => void;
+  onViewAxisChange?: (near: number, far: number) => void;
   /** Extra DOM content drawn on top (status text etc.). */
   hud?: ReactNode;
 }
 
 export function SculptureViewer({
-  scene, settings, viewIndex, selectedCamera, onSelectCamera, onMoveCamera, hud,
+  scene, settings, viewIndex, selectedCamera, onSelectCamera, onMoveCamera, onBoundsChange, onViewAxisChange, hud,
 }: SculptureViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const size = useElementSize(containerRef);
@@ -73,6 +86,10 @@ export function SculptureViewer({
   const bv = scene.boundingVolume;
   const floorY = Math.min(bv.min[1], bv.max[1]) - 0.001;
   const span = Math.max(...bv.max.map((x, i) => Math.abs(x - bv.min[i])), 1);
+
+  const editBounds = scene.boundsEditable && s.editBounds;
+  const viewAxisCam = scene.viewAxis ? scene.cameras[0] : undefined;
+  const boundsColor = s.silhouette ? "#adb5bd" : "#5c7cfa";
 
   const overlayUrl = viewIndex !== null ? scene.targetImageUrls[viewIndex] ?? null : null;
 
@@ -93,7 +110,25 @@ export function SculptureViewer({
         <ViewerCameraController viewIndex={viewIndex} cameras={scene.cameras} />
 
         {!s.silhouette && <gridHelper args={[span * 6, 24, "#3a3f47", "#262a31"]} position={[0, floorY, 0]} />}
-        {s.showBounds && <BoundingVolume volume={bv} color={s.silhouette ? "#adb5bd" : "#5c7cfa"} />}
+        {scene.viewAxis && viewAxisCam ? (
+          (s.showBounds || editBounds) && (
+            <ViewAxisBounds
+              camera={viewAxisCam}
+              near={scene.viewAxis.near}
+              far={scene.viewAxis.far}
+              color={boundsColor}
+              showBox={s.showBounds}
+              // In Camera 1's own target view the axis points straight at the eye.
+              editable={editBounds && viewIndex !== 0}
+              onChange={onViewAxisChange}
+            />
+          )
+        ) : (
+          <>
+            {s.showBounds && <BoundingVolume volume={bv} color={boundsColor} />}
+            {editBounds && onBoundsChange && <BoxBoundsGizmo volume={bv} onChange={onBoundsChange} />}
+          </>
+        )}
 
         {scene.cameras.map((cam, i) => (
           <CameraFrustum

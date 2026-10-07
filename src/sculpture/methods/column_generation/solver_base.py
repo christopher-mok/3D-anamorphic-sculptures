@@ -18,6 +18,10 @@ class LinearProgram:
     b_ub: np.ndarray
     n_int: int
     row_groups: dict  # name -> slice of rows (coverage, spill, cardinality, conflicts)
+    lb: np.ndarray | None = None  # per-variable lower bounds (1 = column fixed in, e.g. anchors)
+
+    def lower(self) -> np.ndarray:
+        return np.zeros(len(self.c)) if self.lb is None else self.lb
 
 
 @dataclass

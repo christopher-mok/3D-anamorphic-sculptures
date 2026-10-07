@@ -127,6 +127,8 @@ beam:
   bank_probability: 0.8
   global_refine_every: 3
   global_refine_steps: 60
+  refine_entries: 1           # refine/repair only the best beam entries (growth gets the time)
+  refine_on_stall: true       # also refine when a growth round did not improve the best score
   repair: true
   repair_max_objects: 6
   repair_candidates: 128
@@ -143,6 +145,8 @@ column_generation:
   resolution: 48              # MILP pixel grid
   render_resolution: 96       # columns are rendered here and area-pooled to `resolution`
   coverage_threshold: 0.5
+  fg_coverage_threshold: 0.7  # conservative masks: a target pixel is covered only at >= 70% area ...
+  bg_spill_threshold: 0.3     # ... and a background pixel is spilled already at >= 30%
   initial_columns: 3000
   seed_assembly: null         # optional path to a result.json whose objects become initial columns
   pricing_rounds: 30
@@ -155,9 +159,15 @@ column_generation:
   dual_blend: 0.15            # blend of residual utility into dual map (exploration)
   lp_time_limit_s: 60
   milp_time_limit_s: 120
+  milp_time_share: 0.25        # share of the remaining runtime for one whole MILP phase (incl. conflict re-solves)
   milp_gap: 0.002
   max_conflict_rounds: 10
   polish_steps: 200
+  anchor_rounds: 2            # anchored rounds whose time is reserved before the first MILP
+  max_anchor_rounds: 6        # keep anchoring while time remains ...
+  anchor_patience: 2          # ... and stop after this many rounds without improvement
+  anchor_pricing_rounds: 2
+  anchor_time_fraction: 0.12  # share of max_runtime reserved per anchored round
 
 # ---------------------------------------------------------------- Method 3
 sdf_ray:
@@ -179,8 +189,14 @@ sdf_ray:
   w_ray: 1.0
   w_bg: 2.0
   lambda_collision: 30.0      # clearance weight during ray packing (polish uses constraints.lambda_collision)
+  w_overlap: 2.0              # volumetric penetration: soft pairwise overlap volume on the ray samples
+  overlap_eps: 0.01           # soft-occupancy width (world units)
   reseed_every: 100
   reseed_fraction: 0.15
   add_objects_on_plateau: 16
   plateau_tolerance: 0.02
   polish_steps: 250
+  polish_lr_scale: 0.3         # gentle polish: the packed result is already near a local optimum
+  polish_progress_start: 0.8
+  anytime: true               # keep growing + re-packing while the time budget allows
+  max_extra_cycles: 20

@@ -130,10 +130,17 @@ export interface JobRequest {
 
 export interface Health { ok: boolean; cuda: boolean; gurobi: boolean }
 
+/** `bounding_volume` section of the config as returned by GET /api/defaults. */
+export interface DefaultsBoundingVolume extends BoundingVolume {
+  unbounded_view_axis?: boolean;  // single view only: B = box around camera 0's frustum segment
+  view_axis_near?: number;        // distance from camera 0 (used when unbounded_view_axis)
+  view_axis_far?: number;
+}
+
 export interface Defaults {
   models_dir: string;
   cameras: Camera[];
-  bounding_volume: BoundingVolume;
+  bounding_volume: DefaultsBoundingVolume;
   presets: string[];
   methods: MethodName[];
   targets: string[];           // default target paths

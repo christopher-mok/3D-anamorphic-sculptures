@@ -3,9 +3,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, errorMessage, modelMeshUrl } from "../api/client";
 import { isTerminal, useJobStream } from "../api/ws";
 import type {
-  Camera, Defaults, Health, JobRequest, JobStatus, MethodName, ModelInfo, TargetInfo, Vec3,
+  BoundingVolume, Camera, Defaults, Health, JobRequest, JobStatus, MethodName, ModelInfo, TargetInfo, Vec3,
 } from "../api/types";
 import { ALL_METHODS, METHOD_SHORT } from "../api/types";
+import {
+  BoundsPanel, boundsErrors, boundsFromDefaults, boundsOverrides, FALLBACK_BOUNDS, type BoundsSettings,
+} from "../components/BoundsPanel";
 import { CameraEditor } from "../components/CameraEditor";
 import { ComparisonTable } from "../components/ComparisonTable";
 import { JobControls } from "../components/JobControls";
@@ -29,7 +32,13 @@ const FALLBACK_CAMERAS: Camera[] = [
 const FALLBACK_DEFAULTS: Defaults = {
   models_dir: "assets/models",
   cameras: FALLBACK_CAMERAS,
-  bounding_volume: { min: [-1, -1, -1], max: [1, 1, 1] },
+  bounding_volume: {
+    min: FALLBACK_BOUNDS.min,
+    max: FALLBACK_BOUNDS.max,
+    unbounded_view_axis: false,
+    view_axis_near: FALLBACK_BOUNDS.viewAxisNear,
+    view_axis_far: FALLBACK_BOUNDS.viewAxisFar,
+  },
   presets: ["fast", "default", "high_quality"],
   methods: ALL_METHODS,
   targets: [],
@@ -65,6 +74,7 @@ export function App() {
   const [preset, setPreset] = useState<PresetChoice>("default");
   const [overridesText, setOverridesText] = useState("{\n}");
   const [designOptions, setDesignOptions] = useState<DesignOptions>(DEFAULT_DESIGN_OPTIONS);
+  const [bounds, setBounds] = useState<BoundsSettings>(FALLBACK_BOUNDS);
 
   // ---- jobs --------------------------------------------------------------------------
   const [jobId, setJobId] = useState<string | null>(null);
@@ -107,6 +117,8 @@ export function App() {
         setDefaults(merged);
         setModelsDir(merged.models_dir || FALLBACK_DEFAULTS.models_dir);
         setCameras(merged.cameras);
+        setBounds(boundsFromDefaults(merged.bounding_volume));
+        if (merged.bounding_volume.unbounded_view_axis) setDesignOptions((o) => ({ ...o, unboundedAxis: true }));
         setMethods(merged.methods);
         setTarget1((t) => t ?? merged.targets[0] ?? null);
         setTarget2((t) => t ?? merged.targets[1] ?? null);
@@ -151,6 +163,8 @@ export function App() {
 
   // ---- run -----------------------------------------------------------------------------
   const numSetupViews = target2Enabled ? 2 : 1;
+  // Unbounded camera-axis bounds (single view only): B follows camera 0's frustum.
+  const viewAxisMode = designOptions.unboundedAxis && numSetupViews === 1;
   const overrides = preset === "custom" ? parseOverrides(overridesText) : null;
   const startBlockers: string[] = [];
   if (!modelsDir.trim()) startBlockers.push("Model folder is empty.");
@@ -158,6 +172,7 @@ export function App() {
   if (target2Enabled && !target2) startBlockers.push("Select Target Image 2 (or disable it).");
   if (methods.length === 0) startBlockers.push("Select at least one method.");
   if (overrides?.error) startBlockers.push("Fix the Custom overrides JSON.");
+  startBlockers.push(...boundsErrors(bounds, viewAxisMode));
 
   const openJob = useCallback((id: string) => {
     setJobId(id);
@@ -183,8 +198,10 @@ export function App() {
       methods: ALL_METHODS.filter((m) => methods.includes(m)),
       preset: preset === "custom" ? "default" : preset,
     };
+    const singleView = targetsReq.length === 1;
+    // Later entries win: design options < bounds < Custom JSON.
     const merged = deepMerge(
-      designOverrides(designOptions, targetsReq.length === 1),
+      deepMerge(designOverrides(designOptions, singleView), boundsOverrides(bounds, designOptions.unboundedAxis && singleView)),
       preset === "custom" && overrides?.value ? overrides.value : {},
     );
     if (Object.keys(merged).length) req.overrides = merged;
@@ -240,6 +257,9 @@ export function App() {
     [target1, target2, target2Enabled, targets],
   );
 
+  // Stable object identity while only near / far change (keeps the box memo cheap).
+  const setupVolume: BoundingVolume = useMemo(() => ({ min: bounds.min, max: bounds.max }), [bounds.min, bounds.max]);
+
   const scene: SceneData = useMemo(() => {
     if (sceneMode === "results" && job) {
       const pre = job.preprocessing;
@@ -247,6 +267,8 @@ export function App() {
         cameras: pre?.cameras?.length ? pre.cameras : job.request?.cameras ?? [],
         targetImageUrls: jobTargetUrls,
         boundingVolume: pre?.bounding_volume ?? defaults.bounding_volume,
+        viewAxis: null,
+        boundsEditable: false,
         hullUrl: pre?.hull_url ?? null,
         assembly,
         meshUrlFor,
@@ -256,13 +278,18 @@ export function App() {
     return {
       cameras: cameras.slice(0, numSetupViews),
       targetImageUrls: setupTargetUrls,
-      boundingVolume: defaults.bounding_volume,
+      boundingVolume: setupVolume,
+      viewAxis: viewAxisMode ? { near: bounds.viewAxisNear, far: bounds.viewAxisFar } : null,
+      boundsEditable: true,
       hullUrl: null,
       assembly: null,
       meshUrlFor,
       editable: true,
     };
-  }, [sceneMode, job, jobTargetUrls, defaults, assembly, meshUrlFor, cameras, numSetupViews, setupTargetUrls]);
+  }, [
+    sceneMode, job, jobTargetUrls, defaults, assembly, meshUrlFor, cameras, numSetupViews, setupTargetUrls,
+    setupVolume, viewAxisMode, bounds.viewAxisNear, bounds.viewAxisFar,
+  ]);
 
   const numViews = scene.cameras.length;
 
@@ -276,6 +303,12 @@ export function App() {
   const moveCamera = (i: number, p: Vec3) =>
     setCameras((cs) => cs.map((c, k) => (k === i ? { ...c, position: p.map(round4) as Vec3 } : c)));
 
+  const changeBox = useCallback((v: BoundingVolume) => setBounds((b) => ({ ...b, min: v.min, max: v.max })), []);
+  const changeViewAxis = useCallback(
+    (viewAxisNear: number, viewAxisFar: number) => setBounds((b) => ({ ...b, viewAxisNear, viewAxisFar })),
+    [],
+  );
+
   const pickMethod = (m: DisplayMethod) => {
     setDisplayMethod(m);
     if (job) setSceneMode("results");
@@ -286,7 +319,9 @@ export function App() {
   if (scene.editable) {
     hud = selectedCamera !== null
       ? `Setup · dragging Camera ${selectedCamera + 1} (gizmo)`
-      : "Setup · click a camera body to drag it";
+      : `Setup · click a camera body to drag it${
+          settings.editBounds ? (viewAxisMode ? " · drag near / far handles on Camera 1's axis" : " · drag face handles to resize bounds") : ""
+        }`;
   } else if (!resolvedMethod) {
     hud = "Results · no assembly available yet";
   } else {
@@ -343,6 +378,16 @@ export function App() {
               setSelectedCamera(i);
             }}
           />
+          <BoundsPanel
+            bounds={bounds}
+            onChange={setBounds}
+            onReset={() => setBounds(boundsFromDefaults(defaults.bounding_volume))}
+            singleView={numSetupViews === 1}
+            unboundedAxis={designOptions.unboundedAxis}
+            onUnboundedAxis={(unboundedAxis) => setDesignOptions((o) => ({ ...o, unboundedAxis }))}
+            camera={cameras[0]}
+            editInViewer={sceneMode === "setup" && settings.editBounds}
+          />
           <MethodPanel
             available={defaults.methods}
             selected={methods}
@@ -394,6 +439,8 @@ export function App() {
             selectedCamera={selectedCamera}
             onSelectCamera={setSelectedCamera}
             onMoveCamera={moveCamera}
+            onBoundsChange={changeBox}
+            onViewAxisChange={changeViewAxis}
             hud={hud}
           />
           {job?.comparison && (

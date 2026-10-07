@@ -183,7 +183,7 @@ Start from an empty assembly. For each beam entry:
 4. Run a **local lookahead** that optimizes only the candidate (t, rot6d, log s) for 15 Adam steps with the parent frozen, using the image loss + containment + collision penalty. In strict mode, candidates are then projected into Ω and re-scored. Candidates that collide with the parent are rejected.
 5. Form children: single adds, plus one **non-conflicting multi-add** whose dilated footprints don't overlap in any view.
 
-The best B diverse children survive, with near-duplicate renders pruned. Every 3 rounds the method runs a **global joint refinement** (60 steps, coarse-to-fine) and then **repairs**: leave-one-out marginal contributions, SWAP to a silhouette-compatible mesh, RESEED into the residual, and LARGE POSE JUMP. Deletion only undoes harmful objects that can't be repaired. The search stops at the target IoU, after no improvement for N rounds, at max objects, or at the time or renderer-call budget.
+The best B diverse children survive, with near-duplicate renders pruned. Every 3 rounds, and whenever a growth round fails to improve, the **best** beam entry gets a **global joint refinement** (60 steps, coarse-to-fine) and then **repairs**. Refining every entry was dropped: profiling showed it cost about 3 growth rounds while adding almost nothing beyond growth (`beam.refine_entries`, `beam.refine_on_stall`). The repairs are: leave-one-out marginal contributions, SWAP to a silhouette-compatible mesh, RESEED into the residual, and LARGE POSE JUMP. Deletion only undoes harmful objects that can't be repaired. The search stops at the target IoU, after no improvement for N rounds, at max objects, or at the time or renderer-call budget.
 
 ### Method 2: Column-generation MILP (`methods/column_generation/`)
 * **Master** (`master.py`): `x_c ∈ {0,1}`, coverage `y_p ≤ Σ_{c∋p} x_c`, spill `z_p ≥ x_c`, `Σx ≤ max_objects` (safety only).
@@ -197,7 +197,16 @@ The best B diverse children survive, with near-duplicate renders pruned. Every 3
 
   A column's reduced profit is `Σ W_dual·S − σ_card`. Batches of bank-initialized placements are optimized with nvdiffrast against `W_dual`, projected into Ω, binarized, and added if their profit is positive.
 * **Conflicts** (`conflicts.py`): lazy. For the LP, every pair in the LP support is checked and the LP is re-solved only if a new cut is violated. For the MILP, conflicts among the selected columns, and between them and the pool, are cut until the selection is collision-free (with a final repair if the cut budget runs out).
-* **Final**: MILP (with a time limit; a greedy LP rounding is the fallback incumbent), then a raster polish with the shared loss. The method reports the LP objective / loss bound, integer objective / loss, column count, pricing rounds, conflicts and MILP status.
+* **Conservative column masks**: a target pixel counts as covered only if a column covers at least 70% of its area, and a background pixel counts as spilled already at 30% (`fg_coverage_threshold`, `bg_spill_threshold`). With a single 0.5 threshold, the coarse MILP grid over-estimated coverage: the MILP loss was 0.18, but the rendered loss was 0.25.
+* **Final**: MILP plus a conflict-free greedy LP rounding as a second incumbent; the better one is kept. One time budget (`milp_time_share`) covers the whole MILP phase, including conflict re-solves. Then a raster polish with the shared loss.
+* **Anchored re-optimization** (`max_anchor_rounds`, `anchor_patience`):
+  - The polished pieces are added as columns fixed at x = 1.
+  - New columns are priced against what is still uncovered, with conflicts against the anchors.
+  - The MILP fills the holes, and the additions are polished.
+  - Rounds repeat while they improve and time remains.
+
+  This fixes the main weakness of a one-shot selection: rigid, coarse placements leave the target under-covered (recall 0.73), and the polish alone can't fill the gaps.
+* Reporting: LP objective / loss bound (unanchored; the anchored LPs are not bounds and are reported separately as `anchored_*`), integer objective / loss, column count, pricing rounds, conflicts and MILP status.
 * ⚠️ **Pricing is solved heuristically.** The LP bound is rigorous **only over the discovered columns**, not a global certificate for the continuous placement space. The log says so explicitly.
 
 ### Method 3: SDF ray packing (`methods/sdf_ray/`)
@@ -207,9 +216,11 @@ The best B diverse children survive, with near-duplicate renders pruned. Every 3
   - `L_ray = mean τ·softplus(d_r/τ)`. This is the spec's softplus(d/τ) scaled by τ, so the gradient scale stays constant while τ anneals from 0.08 to 0.01.
   - Background rays get the mirrored term.
 * Mins over objects and over ray samples use a **straight-through soft-min**: the forward value is the exact min and the backward is the soft-min gradient. A plain log-sum-exp is biased low by up to τ·log n, which made rays look "hit" when nothing intersected them.
+* **Volumetric penetration** (`sdf_ray.w_overlap: 2.0`, `overlap_eps: 0.01`): `mean_q Σ_{i<j} σ(−φ_i/ε)·σ(−φ_j/ε)`. This is a Monte Carlo estimate of the soft pairwise overlap volume, computed on the foreground-ray samples inside Ω that are evaluated anyway. Unlike the surface-sample clearance term it is bounded and smooth, and it also penalizes one piece sitting fully inside another. It spreads pieces out instead of stacking them on the same rays.
 * Containment `ReLU(φ_Ω)²`, SDF collisions and the scale range are included. Projected steps keep the solution feasible in the second half.
 * Initialization: greedy max-utility selection from residual- and bank-guided candidates (not convex decomposition of Ω). The weakest objects (fewest owned rays) are reseeded periodically, and objects are added when ray coverage plateaus.
-* Finally, a **raster polish** with the shared nvdiffrast multiscale loss determines the reported fidelity.
+* **Anytime schedule**: the planned annealing cycle often ends far inside the budget (16 s of 60 s). While time remains and rays are still uncovered, the method adds pieces (collision-aware greedy initialization on the residual) and runs shorter, cooler packing cycles (`sdf_ray.anytime`, `max_extra_cycles`).
+* Finally, a gentle **raster polish** (`polish_lr_scale: 0.3`, starting at fine weights) with the shared nvdiffrast multiscale loss determines the reported fidelity. The previous coarse-to-fine polish at full learning rate first moved the converged pieces away and never recovered.
 
 ## 8. UI
 
@@ -219,6 +230,7 @@ cd frontend && npm run dev                         # open http://localhost:5173
 ```
 
 * **Setup**:
+  - **Sculpture bounds**: min/max inputs, or drag the six colored face handles of the box in the 3D view (the white center handle moves the whole box). With one target and *Camera axis* mode, set the near/far distances from the camera with inputs or the yellow/pink handles on the view axis. The derived box is shown dashed. The bounds are sent as `bounding_volume` overrides.
   - Model folder: thumbnails, triangle counts and normalized dimensions.
   - Target 1 and an optional Target 2: pick from `assets/targets` or upload.
   - Camera editor: position, look-at, FOV, near and far, with live frusta and a drag gizmo.
@@ -274,6 +286,37 @@ The world transform is `x_world = scale · R · x_canonical + translation`, wher
 | SDF ray | 0.937 | 0.953 | 0.22% | 4 | 0 | 112 | 46 s |
 
 The strict-containment upper bound for this pair is 0.981 and 0.983, which limits any method under strict mode. These tables were produced *before* the intersection work in section 5b. Their collision column used the old detector, which under-counted about 10×. See `outputs/experiments/summary.md` (`scripts/run_feature_experiments.py`) for runs with the current handling.
+
+### Benchmark of the method improvements (2026-10-07)
+
+`scripts/benchmark_versions.py` compares commit `8533862` (baseline) with the improved tree: the same heart/star targets, every run intersection-free, and alternating runs. Values are min-view IoU, with zero reference intersections in every run.
+
+| Preset | Method | Baseline | Improved | Runtime (base → impr.) |
+|---|---|---|---|---|
+| fast (3 seeds, mean ± sd) | Beam | 0.889 ± 0.007 | 0.887 ± 0.014 | 64 → 66 s |
+| | Column generation | 0.705 ± 0.049 | **0.765 ± 0.020** | 62 → 40 s |
+| | SDF ray | 0.826 ± 0.019 | **0.853 ± 0.012** | 16 → 38 s |
+| Medium (1 seed) | Beam | 0.918 | 0.913 | 311 → 313 s |
+| | Column generation | 0.737 | **0.833** | 328 → 211 s |
+| | SDF ray | 0.869 | **0.891** | 61 → 158 s |
+
+* **Column generation**: conservative masks plus anchored re-optimization give the largest gain. The first anchored round typically cuts the loss by about 30% (0.155 → 0.110 on Medium).
+* **SDF ray**: the anytime cycles use the budget, and the gentle polish now helps (0.109 → 0.075 loss on Medium; before, the polish changed nothing).
+* **Beam**: refining only the best entry is neutral for IoU (same budget, about 50% more pieces). Beam is limited by the strict no-intersection requirement: Medium Beam was 0.970 before intersections were enforced.
+* Improved column generation and SDF ray hit the `max_objects: 200` safety cap on Medium. Raising it is the next lever, since piece count is not penalized.
+
+### Volumetric penetration loss for SDF ray packing (2026-10-07)
+
+`scripts/benchmark_versions.py --methods sdf_ray` compares the method with `w_overlap = 0` (baseline) against `w_overlap = 2`. The weight was tuned on seeds 0–1; the benchmark uses held-out seeds.
+
+| Preset | Version | min-view IoU | Pieces | Conflicts left for the final stage | Pieces removed there |
+|---|---|---|---|---|---|
+| fast (seeds 2–6) | baseline | 0.855 ± 0.019 | 120 (cap) | 4–6 | 2 (1 run) |
+| fast (seeds 2–6) | + overlap | **0.886 ± 0.012** | ≈93 | 0 in 4 of 5 runs | 0 |
+| Medium (seeds 0–1) | baseline | 0.897 | 198 (cap) | 14–16 | 2 per run |
+| Medium (seeds 0–1) | + overlap | 0.896 | ≈94 | 4–5 | 0 |
+
+On fast, it gives +0.031 IoU (better on 4 of 5 seeds, tied on 1). On Medium, IoU is unchanged, but it reaches that with half the pieces, about 3× fewer intersections to repair, and no removals. The final resolution stage stays as the guarantee, because shallow slivers have almost no volume.
 
 ## 11. Code map
 

@@ -83,3 +83,54 @@ export function colorForMesh(name: string): Color {
 
 export const CAMERA_COLORS = ["#ff9f43", "#4dabf7"];
 export const cameraColor = (i: number) => CAMERA_COLORS[i % CAMERA_COLORS.length];
+
+/** Unit viewing direction (eye -> look_at) of an optimization camera. */
+export function cameraForward(cam: Camera): Vector3 {
+  const d = v3(cam.look_at).sub(v3(cam.position, [0, 0, 5]));
+  return d.lengthSq() < 1e-12 ? new Vector3(0, 0, -1) : d.normalize();
+}
+
+/**
+ * Corners of the square-aspect frustum segment of `cam` between distances `near`
+ * and `far` (world space): [near tl, tr, br, bl, far tl, tr, br, bl].
+ */
+export function frustumSegmentCorners(cam: Camera, near: number, far: number): Vector3[] {
+  const pose = cameraPose(cam);
+  const t = Math.tan(MathUtils.degToRad(cam.fov_y_deg || 1) / 2);
+  const out: Vector3[] = [];
+  for (const d of [near, far]) {
+    for (const [sx, sy] of [[-1, 1], [1, 1], [1, -1], [-1, -1]]) {
+      out.push(new Vector3(sx * t * d, sy * t * d, -d).applyQuaternion(pose.quaternion).add(pose.position));
+    }
+  }
+  return out;
+}
+
+/**
+ * Axis-aligned box around the frustum segment: what the backend uses as B when
+ * bounding_volume.unbounded_view_axis is on (mirrors context.view_axis_volume).
+ */
+export function viewAxisVolume(cam: Camera, near: number, far: number): { min: Vec3; max: Vec3 } {
+  const pts = frustumSegmentCorners(cam, near, far);
+  const r = (x: number) => Math.round(x * 1e4) / 1e4;
+  const min = [0, 1, 2].map((i) => r(Math.min(...pts.map((p) => p.getComponent(i))))) as Vec3;
+  const max = [0, 1, 2].map((i) => r(Math.max(...pts.map((p) => p.getComponent(i))))) as Vec3;
+  return { min, max };
+}
+
+/**
+ * Parameter t of the point on the line `origin + t * dir` (dir unit length) closest
+ * to the ray `rayOrigin + s * rayDir` (unit). Null when the ray is (nearly) parallel
+ * to the line or the closest point lies behind the ray origin.
+ */
+export function closestLineParam(origin: Vector3, dir: Vector3, rayOrigin: Vector3, rayDir: Vector3): number | null {
+  const w0 = origin.clone().sub(rayOrigin);
+  const b = dir.dot(rayDir);
+  const denom = 1 - b * b;
+  if (denom < 1e-4) return null;
+  const d = dir.dot(w0);
+  const e = rayDir.dot(w0);
+  const t = (b * e - d) / denom;
+  const s = e + t * b;
+  return s > 0 ? t : null;
+}

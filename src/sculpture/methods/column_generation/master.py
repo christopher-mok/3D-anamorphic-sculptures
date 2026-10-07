@@ -32,11 +32,18 @@ from .solver_base import LinearProgram, LPResult
 class ColumnPool:
     """Discovered placements with their binary silhouette masks at the MILP resolution."""
 
-    def __init__(self, ctx, resolution: int, render_resolution: int, threshold: float = 0.5):
+    def __init__(self, ctx, resolution: int, render_resolution: int, threshold: float = 0.5,
+                 fg_threshold: float | None = None, bg_threshold: float | None = None):
         self.ctx = ctx
         self.res = int(resolution)
         self.rres = int(render_resolution)
         self.threshold = float(threshold)
+        # Conservative binarization: a target pixel only counts as covered when the column covers
+        # >= fg_threshold of its area, and a background pixel counts as spilled already at
+        # >= bg_threshold. With a single 0.5 threshold the coarse MILP grid systematically
+        # over-estimated coverage (MILP loss 0.18 vs 0.25 when actually rendered).
+        self.fg_threshold = float(fg_threshold if fg_threshold is not None else threshold)
+        self.bg_threshold = float(bg_threshold if bg_threshold is not None else threshold)
         self.V = ctx.num_views
         self.P = self.V * self.res * self.res
         self.mesh_ids = torch.zeros(0, dtype=torch.long)
@@ -58,11 +65,19 @@ class ColumnPool:
         out = []
         for s in range(0, len(a), 512):
             S = self.ctx.render_instances(a[list(range(s, min(s + 512, len(a))))], self.rres)
-            out.append((downsample_area(S, self.res) >= self.threshold).reshape(S.shape[0], -1))
+            out.append(self.binarize(downsample_area(S, self.res)))
         return torch.cat(out) if out else torch.zeros(0, self.P, dtype=torch.bool, device=self.ctx.device)
 
-    def add(self, a: Assembly, source: str, masks: torch.Tensor | None = None) -> int:
-        """Add placements (deduplicated by mask, zero-coverage dropped). Returns #added."""
+    def binarize(self, area: torch.Tensor) -> torch.Tensor:
+        """Area coverage [N, V, res, res] -> column pixel masks [N, P] (bool)."""
+        if not hasattr(self, "_fg_t"):
+            self._fg_t = torch.as_tensor(self.fg, device=area.device).reshape(1, -1)
+        flat = area.reshape(area.shape[0], -1)
+        return torch.where(self._fg_t, flat >= self.fg_threshold, flat >= self.bg_threshold)
+
+    def add(self, a: Assembly, source: str, masks: torch.Tensor | None = None, dedupe: bool = True) -> int:
+        """Add placements (deduplicated by mask unless dedupe=False, zero-coverage dropped).
+        Returns #added; the new columns are the last #added rows."""
         if len(a) == 0:
             return 0
         if masks is None:
@@ -71,10 +86,10 @@ class ColumnPool:
         keep = []
         for i in range(len(a)):
             idx = np.flatnonzero(m_np[i])
-            if idx.size == 0 or not self.fg[idx].any():
+            if dedupe and (idx.size == 0 or not self.fg[idx].any()):
                 continue
             h = hashlib.blake2b(idx.astype(np.int32).tobytes(), digest_size=12).hexdigest()
-            if h in self._hashes:
+            if dedupe and h in self._hashes:
                 continue
             self._hashes.add(h)
             keep.append(i)
@@ -131,6 +146,7 @@ class MasterProblem:
         self.w_cov = float(w_cov)
         self.max_objects = int(max_objects)
         self.conflicts: set[tuple[int, int]] = set()
+        self.fixed: set[int] = set()  # columns forced to x = 1 (anchored re-optimization)
 
     # ------------------------------------------------------------ build
     def build(self) -> tuple[LinearProgram, MasterLayout]:
@@ -171,7 +187,9 @@ class MasterProblem:
         groups["cardinality"] = slice(r0, r0 + 1)
         r0 += 1
         # conflicts
-        conf = [p for p in self.conflicts if p[0] < C and p[1] < C]
+        # a conflict between two fixed columns would make the model infeasible: such pairs are
+        # left to the shared intersection-resolution stage
+        conf = [p for p in self.conflicts if p[0] < C and p[1] < C and not (p[0] in self.fixed and p[1] in self.fixed)]
         if conf:
             K = len(conf)
             ij = np.array(conf)
@@ -180,7 +198,11 @@ class MasterProblem:
             b_ub.append(np.ones(K))
         groups["conflicts"] = slice(r0, r0 + len(conf))
         A_ub = sp.vstack(blocks, format="csr")
-        lp = LinearProgram(c, A_ub, np.concatenate(b_ub), C, groups)
+        lb = None
+        if self.fixed:
+            lb = np.zeros(n)
+            lb[[i for i in self.fixed if i < C]] = 1.0
+        lp = LinearProgram(c, A_ub, np.concatenate(b_ub), C, groups, lb)
         layout = MasterLayout(C, fg_pix, bg_pix, spill_pairs[:, :] if S else spill_pairs)
         if S:
             layout.spill_pairs = np.stack([Abg.row, bg_pix[Abg.col]], 1)
@@ -229,8 +251,8 @@ class MasterProblem:
 
 
 def greedy_selection(master: MasterProblem, x_lp: np.ndarray, max_objects: int) -> np.ndarray:
-    """Feasible 0/1 incumbent: add columns in decreasing LP value if they do not
-    conflict with already chosen ones and strictly increase the objective."""
+    """Feasible 0/1 incumbent: fixed columns first, then add columns in decreasing LP value
+    if they do not conflict with already chosen ones and strictly increase the objective."""
     pool = master.pool
     C = len(pool)
     order = np.argsort(-x_lp[:C], kind="stable")
@@ -240,10 +262,14 @@ def greedy_selection(master: MasterProblem, x_lp: np.ndarray, max_objects: int) 
         conflicts.setdefault(i, set()).add(j)
         conflicts.setdefault(j, set()).add(i)
     covered = np.zeros(pool.P, bool)
-    chosen: list[int] = []
+    chosen: list[int] = sorted(i for i in master.fixed if i < C)
+    for c in chosen:
+        covered[pool.rows[c]] = True
     for c in order:
         if len(chosen) >= max_objects:
             break
+        if int(c) in master.fixed:
+            continue
         if conflicts.get(int(c), set()) & set(chosen):
             continue
         idx = pool.rows[c]

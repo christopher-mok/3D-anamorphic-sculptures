@@ -26,7 +26,7 @@ function jobLabel(j: JobStatus): string {
 
 export function JobControls(p: JobControlsProps) {
   return (
-    <Section title="5 · Run">
+    <Section title="6 · Run">
       <div className="run-buttons">
         <button type="button" className="primary" disabled={!p.canStart || p.submitting || p.jobActive} onClick={p.onStart}>
           {p.submitting ? <Spinner label="Starting…" /> : "Start optimization"}

@@ -259,6 +259,12 @@ class OptimizationMethod(ABC):
 
         ctx = self.ctx
         a = a.detach()
+        if ctx.strict and len(a):
+            # strict containment: project, and drop pieces that cannot be made to fit (invalid geometry)
+            a, valid = ctx.constraints.project_inside(a)
+            if not bool(valid.all()):
+                self.info["removed_outside_hull"] = int((~valid).sum())
+                a = a[valid]
         if float(ctx.cfg.diversity.weight) > 0 and ctx.cfg.diversity.get("swap_stage", True) and len(a) > 1:
             self.phase = "diversity_swaps"
             a, st = rebalance_types(ctx, a, deadline_s=max(15.0, 0.15 * self.max_runtime))

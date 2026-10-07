@@ -81,6 +81,12 @@ export function ViewerToolbar(p: ViewerToolbarProps) {
       </div>
       <div className="toolbar-row toggles">
         {toggle("showBounds", "Bounding volume")}
+        {toggle(
+          "editBounds",
+          "Edit bounds",
+          p.sceneMode !== "setup",
+          p.sceneMode === "setup" ? "Drag handles in the 3D view to resize / move the bounds" : "Setup mode only",
+        )}
         {toggle("showHull", "Visual hull", !p.hasHull, p.hasHull ? undefined : "Available after preprocessing")}
         {s.showHull && p.hasHull && (
           <select

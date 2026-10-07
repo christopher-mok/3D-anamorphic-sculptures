@@ -19,6 +19,7 @@ plateaus. Finally the shared nvdiffrast multiscale loss polishes the result.
 from __future__ import annotations
 
 import logging
+import math
 
 import torch
 
@@ -117,6 +118,15 @@ class SDFRayOptimizer(OptimizationMethod):
             total = total + w * L
             out[name] = float(L.detach())
             out[f"{name}_hit"] = float((d < 0).float().mean())
+            if name == "fg" and float(cfg.get("w_overlap", 0.0)) > 0 and len(a) > 1:
+                # VOLUMETRIC PENETRATION: Monte Carlo estimate of the pairwise overlap volume of the
+                # soft occupancies o_i = sigmoid(-phi_i / eps), using the ray samples inside Omega
+                # that were evaluated anyway:  sum_{i<j} o_i o_j = ((sum o)^2 - sum o^2) / 2.
+                occ = torch.sigmoid(-phi_i / float(cfg.get("overlap_eps", 0.01)))
+                s1 = occ.sum(0)
+                L_ov = (0.5 * (s1 * s1 - (occ * occ).sum(0))).mean()
+                total = total + float(cfg.w_overlap) * L_ov
+                out["overlap"] = float(L_ov.detach())
             if name == "fg":
                 with torch.no_grad():
                     owner = phi_i.view(len(a), len(sub), k).amin(-1).argmin(0)  # object closest to each ray
@@ -141,51 +151,32 @@ class SDFRayOptimizer(OptimizationMethod):
         iters = int(cfg.iterations)
         polish_reserve = 0.25 * self.max_runtime
         p, opt = self._new_optimizer(a)
-        last_hit = 0.0
-        it0 = self.iteration
-        for it in range(it0, iters):
-            if self.out_of_time(reserve=polish_reserve):
-                break
-            self.phase = "ray_packing"
-            frac = it / max(iters - 1, 1)
-            tau = float(cfg.tau_start) * (float(cfg.tau_end) / float(cfg.tau_start)) ** frac
-            gen_it = ctx.generator_torch(self.seed * 31337 + 1000 + it)
-            L_ray, terms = self.ray_losses(p, fg, bg, tau, gen_it, int(cfg.rays_per_view) * ctx.num_views,
-                                           int(cfg.bg_rays_per_view) * ctx.num_views, int(cfg.samples_per_ray))
-            # moderate clearance weight while packing (the ray loss is O(0.05)); the shared
-            # final stage resolves any remaining intersections
-            pen, pen_terms = ctx.constraints.penalty(p, collisions=True, lambda_collision=float(cfg.get("lambda_collision", 30.0)))
-            loss = L_ray + pen
-            opt.zero_grad(set_to_none=True)
-            loss.backward()
-            opt.step()
-            self.iteration = it + 1
-            self.current = p.detach()
-            if it % 10 == 9:
-                with torch.no_grad():
-                    p.rot6d.copy_(matrix_to_rot6d(rot6d_to_matrix(p.rot6d)))
-                    if ctx.strict and it >= iters // 2:  # projected steps in the second half
-                        proj, _ = ctx.constraints.project_inside(p.detach())
-                        p.translation.copy_(proj.translation)
-                        p.log_scale.copy_(proj.log_scale)
+        import time as _time
 
-            # periodic reseeding of weak objects / growth on plateaus
-            if int(cfg.reseed_every) > 0 and (it + 1) % int(cfg.reseed_every) == 0 and it + 1 < iters:
-                a = p.detach()
-                own = terms.get("ownership")
-                hit = terms.get("fg_hit", 0.0)
-                a = self._reseed(a, own, gen_it)
-                # grow when ray coverage plateaus (piece count is not penalized)
-                if hit - last_hit < float(cfg.plateau_tolerance) and hit < 0.995 and len(a) < int(ctx.cfg.max_objects):
-                    n_add = min(int(cfg.add_objects_on_plateau), int(ctx.cfg.max_objects) - len(a))
-                    extra = self.greedy_init(n_add, gen_it, base=a)
-                    a = Assembly.concat([a, extra]) if len(extra) else a
-                    self.info["objects_added"] = self.info.get("objects_added", 0) + len(extra)
-                last_hit = hit
-                p, opt = self._new_optimizer(a)
-            if it % 20 == 0 or it + 1 == iters:
-                self.log_iteration(p.detach(), ray_loss=float(L_ray.detach()), tau=tau, fg_hit=terms.get("fg_hit"),
-                                   bg_hit=terms.get("bg_hit"), **pen_terms)
+        t_cycle, it_first = _time.time(), min(self.iteration, iters)
+        p, hit = self._pack(p, opt, fg, bg, it_first, iters, float(cfg.tau_start), float(cfg.tau_end), polish_reserve)
+        sec_per_iter = (_time.time() - t_cycle) / max(iters - it_first, 1)
+
+        # ANYTIME extension: the planned schedule often finishes far inside the budget (16 s of
+        # 60 s in the fast preset). While time remains and rays are still uncovered, grow and
+        # re-pack with a shorter, cooler annealing cycle.
+        cycles = 0
+        cyc_iters = max(20, iters // 2)
+        tau_mid = math.sqrt(float(cfg.tau_start) * float(cfg.tau_end))
+        while (cfg.get("anytime", True) and cycles < int(cfg.get("max_extra_cycles", 20)) and hit < 0.995
+               and len(p) < int(ctx.cfg.max_objects)
+               and not self.out_of_time(reserve=polish_reserve + 1.3 * cyc_iters * sec_per_iter)):
+            a = p.detach()
+            gen_c = ctx.generator_torch(self.seed * 31337 + 77 + cycles)
+            n_add = min(int(cfg.add_objects_on_plateau), int(ctx.cfg.max_objects) - len(a))
+            extra = self.greedy_init(n_add, gen_c, base=a)
+            if len(extra) == 0:
+                break
+            self.info["objects_added"] = self.info.get("objects_added", 0) + len(extra)
+            p, opt = self._new_optimizer(Assembly.concat([a, extra]))
+            p, hit = self._pack(p, opt, fg, bg, 0, cyc_iters, tau_mid, float(cfg.tau_end), polish_reserve)
+            cycles += 1
+        self.info["extra_cycles"] = cycles
 
         a = p.detach().normalized_rotations()
         if ctx.strict:
@@ -196,7 +187,8 @@ class SDFRayOptimizer(OptimizationMethod):
         # raster polish with the shared nvdiffrast multiscale loss (determines reported fidelity)
         self.phase = "raster_polish"
         if len(a) and int(cfg.polish_steps) > 0:
-            r = refine_assembly(ctx, a, int(cfg.polish_steps), progress=(0.3, 1.0), deadline=None)
+            r = refine_assembly(ctx, a, int(cfg.polish_steps), progress=(float(cfg.get("polish_progress_start", 0.8)), 1.0),
+                                lr_scale=float(cfg.get("polish_lr_scale", 0.3)))
             a = r.assembly
             self.info["polish_initial_loss"] = r.initial_loss
             self.info["polish_final_loss"] = r.loss
@@ -204,6 +196,55 @@ class SDFRayOptimizer(OptimizationMethod):
         self.iteration += 1
         self.log_iteration(self.best_assembly, force_report=True)
         return self.finalize(self.best_assembly)
+
+    def _pack(self, p, opt, fg, bg, it_start: int, n_iters: int, tau_hi: float, tau_lo: float, polish_reserve: float):
+        """One annealing cycle of ray packing (tau_hi -> tau_lo) with reseeding / growth on
+        plateaus. Returns (parameters, last foreground hit rate)."""
+        ctx, cfg = self.ctx, self.cfg
+        last_hit, hit = 0.0, 0.0
+        for it in range(it_start, n_iters):
+            if self.out_of_time(reserve=polish_reserve):
+                break
+            self.phase = "ray_packing"
+            frac = it / max(n_iters - 1, 1)
+            tau = tau_hi * (tau_lo / tau_hi) ** frac
+            gen_it = ctx.generator_torch(self.seed * 31337 + 1000 + self.iteration)
+            L_ray, terms = self.ray_losses(p, fg, bg, tau, gen_it, int(cfg.rays_per_view) * ctx.num_views,
+                                           int(cfg.bg_rays_per_view) * ctx.num_views, int(cfg.samples_per_ray))
+            # moderate clearance weight while packing (the ray loss is O(0.05)); the shared
+            # final stage resolves any remaining intersections
+            pen, pen_terms = ctx.constraints.penalty(p, collisions=True, lambda_collision=float(cfg.get("lambda_collision", 30.0)))
+            loss = L_ray + pen
+            opt.zero_grad(set_to_none=True)
+            loss.backward()
+            opt.step()
+            self.iteration += 1
+            self.current = p.detach()
+            hit = terms.get("fg_hit", hit)
+            if it % 10 == 9:
+                with torch.no_grad():
+                    p.rot6d.copy_(matrix_to_rot6d(rot6d_to_matrix(p.rot6d)))
+                    if ctx.strict and it >= n_iters // 2:  # projected steps in the second half
+                        proj, _ = ctx.constraints.project_inside(p.detach())
+                        p.translation.copy_(proj.translation)
+                        p.log_scale.copy_(proj.log_scale)
+
+            # periodic reseeding of weak objects / growth on plateaus
+            if int(cfg.reseed_every) > 0 and (it + 1) % int(cfg.reseed_every) == 0 and it + 1 < n_iters:
+                a = p.detach()
+                a = self._reseed(a, terms.get("ownership"), gen_it)
+                # grow when ray coverage plateaus (piece count is not penalized)
+                if hit - last_hit < float(cfg.plateau_tolerance) and hit < 0.995 and len(a) < int(ctx.cfg.max_objects):
+                    n_add = min(int(cfg.add_objects_on_plateau), int(ctx.cfg.max_objects) - len(a))
+                    extra = self.greedy_init(n_add, gen_it, base=a)
+                    a = Assembly.concat([a, extra]) if len(extra) else a
+                    self.info["objects_added"] = self.info.get("objects_added", 0) + len(extra)
+                last_hit = hit
+                p, opt = self._new_optimizer(a)
+            if it % 20 == 0 or it + 1 == n_iters:
+                self.log_iteration(p.detach(), ray_loss=float(L_ray.detach()), tau=tau, fg_hit=terms.get("fg_hit"),
+                                   bg_hit=terms.get("bg_hit"), overlap=terms.get("overlap", 0.0), **pen_terms)
+        return p, hit
 
     def _new_optimizer(self, a: Assembly):
         cfg = self.cfg

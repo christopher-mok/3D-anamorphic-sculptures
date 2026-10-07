@@ -28,7 +28,7 @@ class GurobiSolver(MasterSolver):
         vtype = np.full(n, GRB.CONTINUOUS)
         if integer:
             vtype[: lp.n_int] = GRB.BINARY
-        v = m.addMVar(n, lb=0.0, ub=1.0, vtype=vtype.tolist(), obj=lp.c)
+        v = m.addMVar(n, lb=lp.lower(), ub=1.0, vtype=vtype.tolist(), obj=lp.c)
         cons = m.addMConstr(lp.A_ub, v, "<", lp.b_ub)
         m.ModelSense = GRB.MINIMIZE
         return m, v, cons

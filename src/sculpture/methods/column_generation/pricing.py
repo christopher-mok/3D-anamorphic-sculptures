@@ -16,7 +16,8 @@ from ...scene.assembly import Assembly
 from ...targets.pyramids import downsample_area
 
 
-def price_columns(ctx, W_dual: torch.Tensor, sigma: float, n: int, steps: int, render_res: int, gen: torch.Generator, opts: GeneratorOptions | None = None):
+def price_columns(ctx, W_dual: torch.Tensor, sigma: float, n: int, steps: int, render_res: int, gen: torch.Generator,
+                  opts: GeneratorOptions | None = None, pool=None):
     """Returns (placements Assembly, exact reduced profit [n] on binary masks, binary masks [n, V*res*res])."""
     V, res, _ = W_dual.shape
     W_up = torch.nn.functional.interpolate(W_dual[None], size=(render_res, render_res), mode="nearest")[0]
@@ -44,7 +45,8 @@ def price_columns(ctx, W_dual: torch.Tensor, sigma: float, n: int, steps: int, r
     if ctx.strict:
         out, valid = ctx.constraints.project_inside(out)
     with torch.no_grad():
-        S = downsample_area(ctx.render_instances(out, render_res), res) >= 0.5
-        profit = (W_dual[None] * S).sum((1, 2, 3)) - sigma
+        area = downsample_area(ctx.render_instances(out, render_res), res)
+        S = pool.binarize(area) if pool is not None else (area >= 0.5).reshape(len(out), -1)
+        profit = (W_dual.reshape(1, -1) * S).sum(1) - sigma
         profit = torch.where(valid, profit, torch.full_like(profit, -float("inf")))
-    return out, profit, S.reshape(len(out), -1)
+    return out, profit, S

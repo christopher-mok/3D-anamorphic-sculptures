@@ -15,7 +15,8 @@ class ScipySolver(MasterSolver):
         opts = {"presolve": True}
         if time_limit:
             opts["time_limit"] = float(time_limit)
-        res = linprog(lp.c, A_ub=lp.A_ub, b_ub=lp.b_ub, bounds=(0.0, 1.0), method="highs", options=opts)
+        bounds = (0.0, 1.0) if lp.lb is None else np.column_stack([lp.lower(), np.ones(len(lp.c))])
+        res = linprog(lp.c, A_ub=lp.A_ub, b_ub=lp.b_ub, bounds=bounds, method="highs", options=opts)
         if res.x is None:
             raise RuntimeError(f"LP failed: {res.message}")
         duals = np.asarray(res.ineqlin.marginals) if getattr(res, "ineqlin", None) is not None else None
@@ -31,7 +32,7 @@ class ScipySolver(MasterSolver):
         if gap is not None:
             opts["mip_rel_gap"] = float(gap)
         cons = LinearConstraint(lp.A_ub, -np.inf, lp.b_ub)
-        res = milp(lp.c, constraints=cons, integrality=integrality, bounds=Bounds(0.0, 1.0), options=opts)
+        res = milp(lp.c, constraints=cons, integrality=integrality, bounds=Bounds(lp.lower(), np.ones(n)), options=opts)
         if res.x is None:  # e.g. time limit before the first incumbent
             return MILPResult(f"no_solution: {res.message}", float("inf"), None, None, None)
         bound = getattr(res, "mip_dual_bound", None)

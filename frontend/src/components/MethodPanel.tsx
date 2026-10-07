@@ -76,7 +76,7 @@ interface MethodPanelProps {
 export function MethodPanel(p: MethodPanelProps) {
   const parsed = p.preset === "custom" ? parseOverrides(p.overridesText) : null;
   return (
-    <Section title="4 · Methods & quality">
+    <Section title="5 · Methods & quality">
       <div className="checkbox-list">
         {p.available.map((m) => (
           <label className="checkbox" key={m}>
