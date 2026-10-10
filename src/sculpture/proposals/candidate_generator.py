@@ -218,8 +218,6 @@ class CandidateGenerator:
             pos, z = self._slide_to_depth(pos, view, z, z_des)
         else:
             s = r_px * z / f * jitter
-            smin, smax = float(ctx.cfg.scale.min), float(ctx.cfg.scale.max)
-            s = s.clamp(smin, smax)
 
         # mesh + orientation
         M = len(ctx.library)
@@ -228,6 +226,9 @@ class CandidateGenerator:
             mesh = allowed[torch.randint(0, len(allowed), (n,), device=self.device, generator=gen)]
         else:
             mesh = torch.randint(0, M, (n,), device=self.device, generator=gen)
+        if not cons.scale_fixed:
+            factor = cons.model_scale_factors[mesh]
+            s = (s * factor).clamp(float(ctx.cfg.scale.min) * factor, float(ctx.cfg.scale.max) * factor)
         R = random_rotations(n, gen, device=self.device)
         use_bank = torch.rand(n, device=self.device, generator=gen) < opts.bank_probability
         if use_bank.any():

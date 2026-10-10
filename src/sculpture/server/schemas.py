@@ -29,6 +29,7 @@ class InitialAssembly(BaseModel):
 
 class JobRequest(BaseModel):
     models_dir: str = "assets/models"
+    model_names: list[str] | None = None
     targets: list[str]
     cameras: list[CameraModel] | None = None
     methods: list[MethodName] = Field(default_factory=lambda: ["beam", "column_generation", "sdf_ray"])

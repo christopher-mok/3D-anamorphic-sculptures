@@ -32,9 +32,10 @@ scale:
   mode: free                # free | fixed | native. fixed: every instance has radius `fixed`; native: each
   fixed: 0.15               #   model keeps its source-file size x native_factor. In both, pieces that must
   native_factor: 0.3        #   look bigger move toward the camera instead of growing.
+  model_factors: {}         # optional per-input multipliers keyed by model stem or filename; editable in the UI
 
 meshes:
-  extensions: [".obj", ".ply", ".stl", ".glb", ".gltf", ".off"]
+  extensions: [".obj", ".ply", ".stl", ".glb", ".gltf", ".off", ".fbx"]
   # Precise level-of-detail approximations (adaptive quadric decimation): the smallest proxy whose
   # two-sided surface deviation from the original is <= tolerance (fraction of the bounding radius).
   # Optimization uses only the LODs; the original mesh is substituted back at the end

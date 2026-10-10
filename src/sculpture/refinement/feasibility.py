@@ -42,7 +42,8 @@ def _fix_candidates(ctx, obj: Assembly) -> Assembly:
     parts = []
     if not cons.scale_fixed:
         alphas = torch.tensor([0.93, 0.86, 0.78, 0.7, 0.6, 0.5, 0.4, 0.3], device=ctx.device)
-        ls = torch.maximum(obj.log_scale + torch.log(alphas), torch.full_like(alphas, cons.log_smin))
+        lower = cons.log_smin + cons.log_model_scale_factors[obj.mesh_ids[0]]
+        ls = torch.maximum(obj.log_scale + torch.log(alphas), lower.expand_as(alphas))
         k = len(alphas)
         parts.append(Assembly(obj.mesh_ids.expand(k).clone(), obj.translation.expand(k, 3).clone(), obj.rot6d.expand(k, 6).clone(), ls))
     if cons.camera_eye is not None:

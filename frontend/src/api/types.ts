@@ -16,6 +16,7 @@ export interface ModelInfo {
   proxy_triangles: number;  // rendering proxy triangle count
   dims: Vec3;               // normalized bounding-box extents (radius-1 sphere)
   original_dims: Vec3;      // bounding-box extents in source units
+  original_radius: number;  // source-space bounding-sphere radius
   thumbnail_url: string;    // PNG
   mesh_url: string;         // GLB of the canonical normalized mesh
 }
@@ -120,6 +121,7 @@ export type Preset = "fast" | "default" | "high_quality";
 
 export interface JobRequest {
   models_dir: string;            // default "assets/models"
+  model_names?: string[];        // selected source models; omitted means all
   targets: string[];             // 1 or 2 server-side image paths (from upload or list)
   cameras: Camera[];             // same length as targets
   methods: MethodName[];

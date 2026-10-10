@@ -44,22 +44,25 @@ _preview_renderers: dict[str, object] = {}
 _preview_lock = threading.Lock()
 
 
-def _lib_key(models_dir: Path, mesh_cfg) -> str:
+def _lib_key(models_dir: Path, mesh_cfg, model_names=None) -> str:
     keys = {k: mesh_cfg.get(k) for k in ("proxy_max_faces", "coarse_max_faces", "surface_samples", "extensions")}
     files = sorted((p.name, p.stat().st_mtime, p.stat().st_size) for p in models_dir.iterdir() if p.is_file())
-    return hashlib.sha1(json.dumps([str(models_dir.resolve()), keys, files]).encode()).hexdigest()
+    selected = sorted(model_names) if model_names is not None else None
+    return hashlib.sha1(json.dumps([str(models_dir.resolve()), keys, files, selected]).encode()).hexdigest()
 
 
-def get_library(models_dir: Path, mesh_cfg):
+def get_library(models_dir: Path, mesh_cfg, model_names=None):
     """Shared, cached (library, renderer) per model folder."""
     from ..rendering.nvdiffrast_renderer import NvdiffrastRenderer
 
     models_dir = resolve_path(models_dir)
-    key = _lib_key(models_dir, mesh_cfg)
+    key = _lib_key(models_dir, mesh_cfg, model_names)
     with _lib_lock:
         if key not in _libraries:
             cfg = load_config()
-            lib = MeshLibrary.from_folder(models_dir, mesh_cfg, device="cuda", cache_dir=resolve_path(cfg.cache_dir))
+            lib = MeshLibrary.from_folder(
+                models_dir, mesh_cfg, device="cuda", cache_dir=resolve_path(cfg.cache_dir), model_names=model_names,
+            )
             _libraries[key] = (lib, NvdiffrastRenderer(lib, "cuda"))
         return _libraries[key]
 

@@ -19,7 +19,7 @@ from .methods import METHOD_NAMES
 
 
 def _common(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--models", default="assets/models", help="folder with .obj/.ply/.stl/.glb/.gltf meshes")
+    p.add_argument("--models", default="assets/models", help="folder with .obj/.ply/.stl/.glb/.gltf/.off/.fbx meshes")
     p.add_argument("--target", action="append", required=True, help="target silhouette image (repeat for a second view)")
     p.add_argument("--config", default=None, help="YAML file or preset name: fast | default | high_quality")
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE", help="dotted config override, e.g. beam.beam_width=8")

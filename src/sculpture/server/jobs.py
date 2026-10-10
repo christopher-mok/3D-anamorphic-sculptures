@@ -191,7 +191,7 @@ class JobManager:
     def __init__(self, library_provider):
         self.jobs: dict[str, Job] = {}
         self.queue: queue.Queue[Job] = queue.Queue()
-        self.library_provider = library_provider  # (models_dir, mesh_cfg) -> (library, renderer)
+        self.library_provider = library_provider  # (models_dir, mesh_cfg, model_names) -> (library, renderer)
         self.worker = threading.Thread(target=self._loop, daemon=True, name="sculpture-gpu-worker")
         self.worker.start()
 
@@ -203,6 +203,8 @@ class JobManager:
         bad = [m for m in request.methods if m not in METHOD_NAMES]
         if bad or not request.methods:
             raise ValueError(f"invalid methods {bad}")
+        if request.model_names is not None and not request.model_names:
+            raise ValueError("select at least one model")
         job = Job(request)
         self.jobs[job.id] = job
         self.queue.put(job)
@@ -287,7 +289,7 @@ class JobManager:
             job.output_dir = new_run_dir(cfg.output_root)
         job.publish_status()
 
-        library, renderer = self.library_provider(models_dir, cfg.meshes)
+        library, renderer = self.library_provider(models_dir, cfg.meshes, req.model_names)
         ctx = build_context(cfg, models_dir, targets, cams, library=library, renderer=renderer)
         if req.initial is not None and req.initial.assembly.get("objects"):
             from ..context import load_initial_assembly

@@ -17,7 +17,7 @@ from .sdf import MeshSDFLibrary, compute_mesh_sdf
 
 log = logging.getLogger(__name__)
 
-DEFAULT_EXTENSIONS = (".obj", ".ply", ".stl", ".glb", ".gltf", ".off")
+DEFAULT_EXTENSIONS = (".obj", ".ply", ".stl", ".glb", ".gltf", ".off", ".fbx")
 _PREPROCESS_VERSION = 4
 
 
@@ -82,6 +82,7 @@ class MeshEntry:
             "proxy_triangles": self.proxy_triangles,
             "dims": self.dims,
             "original_dims": self.data["original_extent"].astype(float).tolist(),
+            "original_radius": 1.0 / float(self.data["norm_scale"]),
             "watertight": bool(self.data["watertight"]),
             "proxy_error": float(self.data.get("proxy_error", 0.0)),
             "coarse_triangles": int(len(self.data["coarse_faces"])),
@@ -117,7 +118,7 @@ class MeshLibrary:
 
     # ---------------------------------------------------------------- loading
     @classmethod
-    def from_folder(cls, folder, cfg, device="cuda", cache_dir="cache") -> "MeshLibrary":
+    def from_folder(cls, folder, cfg, device="cuda", cache_dir="cache", model_names=None) -> "MeshLibrary":
         folder = Path(folder)
         if not folder.is_dir():
             raise FileNotFoundError(f"model folder {folder} does not exist")
@@ -134,12 +135,15 @@ class MeshLibrary:
             sort_keys=True,
         )
         entries = []
+        selected = set(model_names) if model_names is not None else None
         names_seen: set[str] = set()
         for path in files:
             name = path.stem
             if name in names_seen:  # e.g. chair.obj and chair.ply
                 name = f"{path.stem}_{path.suffix[1:]}"
             names_seen.add(name)
+            if selected is not None and name not in selected and path.name not in selected:
+                continue
             data = None
             cache_file = None
             if cache:
@@ -158,6 +162,11 @@ class MeshLibrary:
                     np.savez_compressed(cache_file, **data)
             entries.append(MeshEntry(len(entries), name, path.name, path, data))
             log.info("loaded %s (%d tris, proxy %d)", path.name, entries[-1].triangles, entries[-1].proxy_triangles)
+        if selected is not None:
+            found = {e.name for e in entries} | {e.filename for e in entries}
+            missing = selected - found
+            if missing:
+                raise ValueError(f"selected models not found: {sorted(missing)}")
         lib = cls(entries, device, cfg, cache)
         lib.folder = folder
         return lib

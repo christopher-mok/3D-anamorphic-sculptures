@@ -34,6 +34,15 @@ class ConstraintEvaluator:
         self.n_collision = int(c.collision_samples)
         self.log_smin = math.log(float(cfg.scale.min))
         self.log_smax = math.log(float(cfg.scale.max))
+        raw_factors = cfg.scale.get("model_factors", {})
+        factors = []
+        for entry in library.entries:
+            value = float(raw_factors.get(entry.name, raw_factors.get(entry.filename, 1.0)))
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"scale.model_factors[{entry.name!r}] must be a positive finite number")
+            factors.append(value)
+        self.model_scale_factors = torch.tensor(factors, dtype=torch.float32, device=library.device)
+        self.log_model_scale_factors = torch.log(self.model_scale_factors)
         # fixed-scale mode: every instance has the same size; apparent size comes from depth only
         # scale is not a parameter in "fixed" (one uniform size) and "native" (each model keeps the
         # size of its source file x native_factor) modes
@@ -43,9 +52,9 @@ class ConstraintEvaluator:
         if self.scale_mode == "native":
             factor = float(cfg.scale.get("native_factor", 0.3))
             radii = [1.0 / float(e.data["norm_scale"]) for e in library.entries]
-            self.fixed_log_scales = torch.log(torch.tensor(radii, device=library.device) * factor)
+            self.fixed_log_scales = torch.log(torch.tensor(radii, device=library.device) * factor * self.model_scale_factors)
         else:
-            self.fixed_log_scales = torch.full((len(library),), self.fixed_log_scale, device=library.device)
+            self.fixed_log_scales = self.fixed_log_scale + self.log_model_scale_factors
         self.bmin = torch.tensor(cfg.bounding_volume.min, dtype=torch.float32, device=library.device)
         self.bmax = torch.tensor(cfg.bounding_volume.max, dtype=torch.float32, device=library.device)
         self.sdf_resolution = int(cfg.meshes.sdf_resolution)
@@ -65,7 +74,8 @@ class ConstraintEvaluator:
         if self.scale_fixed:
             return torch.zeros_like(a.log_scale)
         ls = a.log_scale
-        return torch.relu(ls - self.log_smax) ** 2 + torch.relu(self.log_smin - ls) ** 2
+        offset = self.log_model_scale_factors[a.mesh_ids]
+        return torch.relu(ls - (self.log_smax + offset)) ** 2 + torch.relu((self.log_smin + offset) - ls) ** 2
 
     def bounds_penalty_per_object(self, a: Assembly) -> torch.Tensor:
         t = a.translation
@@ -106,7 +116,8 @@ class ConstraintEvaluator:
         if self.scale_fixed:
             ok = torch.ones(len(a), dtype=torch.bool, device=a.device)
         else:
-            ok = (a.log_scale >= self.log_smin - 1e-4) & (a.log_scale <= self.log_smax + 1e-4)
+            offset = self.log_model_scale_factors[a.mesh_ids]
+            ok = (a.log_scale >= self.log_smin + offset - 1e-4) & (a.log_scale <= self.log_smax + offset + 1e-4)
         if strict and self.hull.mode == "strict":
             ok &= self.containment_violation(a) <= self.contain_tol
         return ok
@@ -141,7 +152,8 @@ class ConstraintEvaluator:
             alphas = torch.tensor([1.0, 0.92, 0.85, 0.78, 0.7, 0.62, 0.55, 0.47, 0.4, 0.32, 0.25, 0.18], device=t.device)
             N, A = len(a), len(alphas)
             ls = a.log_scale.detach()[:, None] + torch.log(alphas)[None]  # [N,A]
-            ls = torch.maximum(ls, torch.full_like(ls, self.log_smin))
+            lower = self.log_smin + self.log_model_scale_factors[a.mesh_ids]
+            ls = torch.maximum(ls, lower[:, None])
             rep = Assembly(a.mesh_ids.repeat_interleave(A), t.repeat_interleave(A, 0), a.rot6d.detach().repeat_interleave(A, 0), ls.reshape(-1))
             ok = (self.containment_violation(rep) <= self.contain_tol).reshape(N, A)
             first = torch.where(ok.any(1), ok.float().argmax(1), torch.full((N,), A - 1, device=t.device))

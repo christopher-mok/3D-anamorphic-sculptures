@@ -55,13 +55,21 @@ npm run dev          # http://localhost:5173  (proxies /api and /outputs to :800
 ## 3. Inputs
 
 ### Models: `assets/models/`
-Put `.obj .ply .stl .glb .gltf .off` files into the folder. On startup every file is processed as follows:
+Put `.obj .ply .stl .glb .gltf .off .fbx` files into the folder. On startup every file is processed as follows:
 - Loaded, with scenes merged and faces triangulated.
 - Centered at its bounding-box center and scaled to bounding-sphere radius 1. The transform is recorded.
 - Decimated into a rendering proxy (≤ 8k faces) and a coarse screening proxy (≤ 1.5k faces). The original stays in high resolution for export.
 - Sampled on its surface, and given a bounding box and center of mass.
 - Given a canonical SDF (64³ by default), computed with a generalized winding number, or with a flood-fill occupancy plus unsigned-distance fallback for open or non-watertight meshes.
 - Rendered into a 64×64 **silhouette bank** at 192 near-uniform SO(3) orientations, with a silhouette-IoU nearest-neighbour index across meshes.
+
+Each model card in the UI has a **Scale** multiplier (default `1`). It is applied before optimization:
+in free mode it multiplies that model's initial and allowed size range, and in fixed/native modes it
+multiplies the model's fixed world size. The API/config equivalent is `scale.model_factors` keyed by
+model stem or filename.
+Use the card's **Use** checkbox to include or exclude that source from optimization. **Preview** places
+the canonical model in the setup viewer at its configured world scale; previews are visual aids only
+and are not initial sculpture pieces.
 
 Everything is cached under `cache/`.
 

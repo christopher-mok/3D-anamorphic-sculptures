@@ -152,6 +152,7 @@ interface JobStatus {
 
 interface JobRequest {
   models_dir: string;            // default "assets/models"
+  model_names?: string[];        // selected model stems; omitted means every model in models_dir
   targets: string[];             // 1 or 2 server-side image paths (from upload or list)
   cameras: Camera[];             // same length as targets
   methods: MethodName[];
@@ -160,6 +161,10 @@ interface JobRequest {
                                         //   scale.mode/fixed, bounding_volume.unbounded_view_axis, diversity.weight)
 }
 ```
+
+Per-source-model scale multipliers may be supplied in `overrides.scale.model_factors`, keyed by
+the model stem (or filename), for example `{"scale":{"model_factors":{"bunny":1.5}}}`. The
+multiplier scales that model's optimized min/max range and its fixed/native size.
 
 ## Endpoints
 

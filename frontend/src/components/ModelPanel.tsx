@@ -8,11 +8,20 @@ interface ModelPanelProps {
   onDirChange: (dir: string) => void;
   onLoad: () => void;
   models: ModelInfo[] | null;
+  selected: ReadonlySet<string>;
+  previewed: ReadonlySet<string>;
+  onSelected: (name: string, selected: boolean) => void;
+  onPreviewed: (name: string, previewed: boolean) => void;
+  scaleFactors: Record<string, number>;
+  onScaleFactor: (name: string, factor: number) => void;
   loading: boolean;
   error: string | null;
 }
 
-export function ModelPanel({ dir, onDirChange, onLoad, models, loading, error }: ModelPanelProps) {
+export function ModelPanel({
+  dir, onDirChange, onLoad, models, selected, previewed, onSelected, onPreviewed,
+  scaleFactors, onScaleFactor, loading, error,
+}: ModelPanelProps) {
   return (
     <Section
       title="1 · Models"
@@ -46,13 +55,29 @@ export function ModelPanel({ dir, onDirChange, onLoad, models, loading, error }:
       {models && models.length > 0 && (
         <div className="model-grid">
           {models.map((m) => (
-            <div className="model-card" key={m.name} title={`${m.filename}\nproxy: ${fmtInt(m.proxy_triangles)} tris`}>
+            <div className={`model-card ${selected.has(m.name) ? "model-selected" : "model-disabled"}`} key={m.name} title={`${m.filename}\nproxy: ${fmtInt(m.proxy_triangles)} tris`}>
               <div className="thumb">
                 {m.thumbnail_url ? <img src={m.thumbnail_url} alt={m.name} loading="lazy" /> : <span>?</span>}
               </div>
               <div className="model-name">{m.filename || m.name}</div>
               <div className="model-meta">{fmtInt(m.triangles)} tris</div>
               <div className="model-meta">{fmtVec(m.dims, 2)}</div>
+              <div className="model-toggles">
+                <label><input type="checkbox" checked={selected.has(m.name)} onChange={(e) => onSelected(m.name, e.target.checked)} /> Use</label>
+                <label><input type="checkbox" checked={previewed.has(m.name)} onChange={(e) => onPreviewed(m.name, e.target.checked)} /> Preview</label>
+              </div>
+              <label className="model-scale" title="Multiplier applied to this model's world-size range before optimization">
+                <span>Scale</span>
+                <input
+                  type="number"
+                  min={0.01}
+                  max={100}
+                  step={0.05}
+                  value={scaleFactors[m.name] ?? 1}
+                  onChange={(e) => onScaleFactor(m.name, Number(e.target.value))}
+                  aria-label={`${m.filename || m.name} scale`}
+                />
+              </label>
             </div>
           ))}
         </div>

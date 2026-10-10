@@ -66,6 +66,9 @@ export function App() {
   const [modelsLoadedDir, setModelsLoadedDir] = useState<string | null>(null);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const [modelScaleFactors, setModelScaleFactors] = useState<Record<string, number>>({});
+  const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
+  const [previewModels, setPreviewModels] = useState<Set<string>>(new Set());
 
   const [targets, setTargets] = useState<TargetInfo[]>([]);
   const [target1, setTarget1] = useState<string | null>(null);
@@ -155,7 +158,11 @@ export function App() {
     api
       .models(dir)
       .then((m) => {
-        setModels(Array.isArray(m) ? m : []);
+        const loaded = Array.isArray(m) ? m : [];
+        setModels(loaded);
+        setModelScaleFactors((old) => Object.fromEntries(loaded.map((model) => [model.name, old[model.name] ?? 1])));
+        setSelectedModels(new Set(loaded.map((model) => model.name)));
+        setPreviewModels(new Set());
         setModelsLoadedDir(dir);
       })
       .catch((e) => setModelsError(errorMessage(e)))
@@ -179,9 +186,13 @@ export function App() {
   const overrides = preset === "custom" ? parseOverrides(overridesText) : null;
   const startBlockers: string[] = [];
   if (!modelsDir.trim()) startBlockers.push("Model folder is empty.");
+  if (models && modelsLoadedDir === modelsDir.trim() && selectedModels.size === 0) startBlockers.push("Select at least one model.");
   if (!target1) startBlockers.push("Select Target Image 1.");
   if (target2Enabled && !target2) startBlockers.push("Select Target Image 2 (or disable it).");
   if (methods.length === 0) startBlockers.push("Select at least one method.");
+  if (Object.values(modelScaleFactors).some((v) => !Number.isFinite(v) || v < 0.01 || v > 100)) {
+    startBlockers.push("Every model scale must be between 0.01 and 100.");
+  }
   if (overrides?.error) startBlockers.push("Fix the Custom overrides JSON.");
   startBlockers.push(...boundsErrors(bounds, viewAxisMode));
 
@@ -202,7 +213,10 @@ export function App() {
   /** Config overrides from the current form. Later entries win: design options < bounds < Custom JSON. */
   const currentOverrides = (singleView: boolean): Record<string, unknown> =>
     deepMerge(
-      deepMerge(designOverrides(designOptions, singleView), boundsOverrides(bounds, designOptions.unboundedAxis && singleView)),
+      deepMerge(
+        deepMerge(designOverrides(designOptions, singleView), boundsOverrides(bounds, designOptions.unboundedAxis && singleView)),
+        { scale: { model_factors: modelScaleFactors } },
+      ),
       preset === "custom" && overrides?.value ? overrides.value : {},
     );
 
@@ -211,6 +225,7 @@ export function App() {
     const targetsReq = target2Enabled && target2 ? [target1, target2] : [target1];
     const req: JobRequest = {
       models_dir: modelsDir.trim(),
+      ...(models && modelsLoadedDir === modelsDir.trim() ? { model_names: models.filter((m) => selectedModels.has(m.name)).map((m) => m.name) } : {}),
       targets: targetsReq,
       cameras: cameras.slice(0, targetsReq.length),
       methods: ALL_METHODS.filter((m) => methods.includes(m)),
@@ -327,6 +342,32 @@ export function App() {
   // Stable object identity while only near / far change (keeps the box memo cheap).
   const setupVolume: BoundingVolume = useMemo(() => ({ min: bounds.min, max: bounds.max }), [bounds.min, bounds.max]);
 
+  const previewAssembly = useMemo(() => {
+    if (!models?.length || previewModels.size === 0) return null;
+    const visible = models.filter((m) => previewModels.has(m.name));
+    const center = setupVolume.min.map((v, i) => (v + setupVolume.max[i]) / 2) as Vec3;
+    const spanX = setupVolume.max[0] - setupVolume.min[0];
+    const objects: ObjectInstance[] = visible.map((m, i) => {
+      const factor = modelScaleFactors[m.name] ?? 1;
+      const base = designOptions.scaleMode === "native"
+        ? m.original_radius * designOptions.nativeFactor
+        : designOptions.fixedScaleValue;
+      const scale = base * factor;
+      const x = visible.length === 1 ? center[0] : setupVolume.min[0] + spanX * (i + 1) / (visible.length + 1);
+      return {
+        mesh_id: m.id,
+        mesh_name: m.name,
+        source_file: m.filename,
+        translation: [x, center[1], center[2]],
+        rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+        rotation6d: [1, 0, 0, 0, 1, 0],
+        log_scale: Math.log(scale),
+        scale,
+      };
+    });
+    return { objects };
+  }, [models, previewModels, setupVolume, modelScaleFactors, designOptions.scaleMode, designOptions.fixedScaleValue, designOptions.nativeFactor]);
+
   const scene: SceneData = useMemo(() => {
     if (sceneMode === "results" && job) {
       const pre = job.preprocessing;
@@ -350,14 +391,14 @@ export function App() {
       viewAxis: viewAxisMode ? { near: bounds.viewAxisNear, far: bounds.viewAxisFar } : null,
       boundsEditable: true,
       hullUrl: null,
-      assembly: null,
+      assembly: previewAssembly,
       meshUrlFor,
       editable: true,
       zoneRadius: designOptions.viewingZoneRadius,
     };
   }, [
     sceneMode, job, jobTargetUrls, defaults, assembly, meshUrlFor, cameras, numSetupViews, setupTargetUrls,
-    setupVolume, viewAxisMode, bounds.viewAxisNear, bounds.viewAxisFar, designOptions.viewingZoneRadius,
+    setupVolume, previewAssembly, viewAxisMode, bounds.viewAxisNear, bounds.viewAxisFar, designOptions.viewingZoneRadius,
   ]);
 
   const numViews = scene.cameras.length;
@@ -403,6 +444,7 @@ export function App() {
     const n = jobReq.targets.length;
     const req: JobRequest = {
       models_dir: jobReq.models_dir,
+      ...(jobReq.model_names ? { model_names: [...jobReq.model_names] } : {}),
       targets: [...jobReq.targets],
       cameras: jobReq.cameras.slice(0, n),
       methods: [...jobReq.methods],
@@ -473,6 +515,16 @@ export function App() {
             onDirChange={setModelsDir}
             onLoad={loadModels}
             models={models}
+            selected={selectedModels}
+            previewed={previewModels}
+            onSelected={(name, on) => setSelectedModels((old) => {
+              const next = new Set(old); if (on) next.add(name); else next.delete(name); return next;
+            })}
+            onPreviewed={(name, on) => setPreviewModels((old) => {
+              const next = new Set(old); if (on) next.add(name); else next.delete(name); return next;
+            })}
+            scaleFactors={modelScaleFactors}
+            onScaleFactor={(name, factor) => setModelScaleFactors((old) => ({ ...old, [name]: factor }))}
             loading={modelsLoading}
             error={modelsError}
           />

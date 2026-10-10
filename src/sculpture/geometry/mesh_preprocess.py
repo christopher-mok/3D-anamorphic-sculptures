@@ -10,9 +10,31 @@ import trimesh
 log = logging.getLogger(__name__)
 
 
+def _load_fbx(path) -> trimesh.Trimesh:
+    """Load all FBX mesh nodes, triangulating and baking world transforms.
+
+    Trimesh intentionally has no native FBX loader. Assimp handles both binary and
+    ASCII FBX; ``Process_PreTransformVertices`` flattens the node hierarchy into the
+    single world-space mesh representation used by the optimizers.
+    """
+    import assimp_py
+
+    parts: list[trimesh.Trimesh] = []
+    flags = assimp_py.Process_Triangulate | assimp_py.Process_PreTransformVertices | assimp_py.Process_JoinIdenticalVertices
+    scene = assimp_py.import_file(str(path), flags)
+    for mesh in scene.meshes:
+        positions = np.asarray(mesh.vertices, dtype=np.float64).reshape(-1, 3)
+        faces = np.asarray(mesh.indices, dtype=np.int64).reshape(-1, 3)
+        if len(positions) and len(faces):
+            parts.append(trimesh.Trimesh(positions, faces, process=False))
+    if not parts:
+        raise ValueError(f"{path}: FBX contains no visible polygon meshes")
+    return trimesh.util.concatenate(parts)
+
+
 def load_mesh(path) -> trimesh.Trimesh:
     """Load any trimesh-supported file, merging scenes into one triangle mesh."""
-    loaded = trimesh.load(str(path), force="mesh", process=True)
+    loaded = _load_fbx(path) if str(path).lower().endswith(".fbx") else trimesh.load(str(path), force="mesh", process=True)
     if isinstance(loaded, trimesh.Scene):  # older trimesh versions
         loaded = loaded.dump(concatenate=True)
     if not isinstance(loaded, trimesh.Trimesh):
