@@ -21,11 +21,16 @@ interface CameraFrustumProps {
   editable?: boolean;
   onSelect?: () => void;
   onMove?: (position: Vec3) => void;
+  /** Viewing-zone radius (0 = none): ring around the eye, perpendicular to the view direction. */
+  zoneRadius?: number;
+  showZone?: boolean;
 }
+
+const RING_SEGMENTS = 72;
 
 export function CameraFrustum({
   camera, index, color, showFrustum, imageUrl, showImage, imageOpacity = 0.85,
-  selected = false, editable = false, onSelect, onMove,
+  selected = false, editable = false, onSelect, onMove, zoneRadius = 0, showZone = true,
 }: CameraFrustumProps) {
   const pose = useMemo(() => cameraPose(camera), [camera]);
 
@@ -44,12 +49,25 @@ export function CameraFrustum({
     return { segments, upMarker };
   }, [half, depth]);
 
+  // Camera-local XY plane = perpendicular to the viewing direction (camera looks down -Z).
+  const ring = useMemo(
+    () =>
+      zoneRadius > 0
+        ? Array.from({ length: RING_SEGMENTS + 1 }, (_, k) => {
+            const a = (k / RING_SEGMENTS) * Math.PI * 2;
+            return new Vector3(Math.cos(a) * zoneRadius, Math.sin(a) * zoneRadius, 0);
+          })
+        : null,
+    [zoneRadius],
+  );
+
   const [body, setBody] = useState<Mesh | null>(null);
   const bodySize = Math.max(0.06, dist * 0.03);
 
   return (
     <>
       <group position={pose.position} quaternion={pose.quaternion}>
+        {ring && showZone && <Line points={ring} color={color} lineWidth={2} />}
         {showFrustum && (
           <>
             <Line points={segments} segments color={color} lineWidth={selected ? 2.5 : 1.5} />

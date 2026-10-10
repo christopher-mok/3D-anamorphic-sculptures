@@ -10,3 +10,4 @@ dist/
 frontend/node_modules/
 frontend/dist/
 assets/models_complex/
+assets/models_sized/

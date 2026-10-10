@@ -52,3 +52,6 @@ sdf_ray:
   samples_per_ray: 48
   iterations: 2500
   polish_steps: 500
+
+chained:
+  max_runtime_s: 1800

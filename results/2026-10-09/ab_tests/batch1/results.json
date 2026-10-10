@@ -1,0 +1,306 @@
+{
+  "beam_base": {
+    "0": {
+      "min_view_iou": 0.8870263695716858,
+      "mean_iou": 0.9071962833404541,
+      "collisions": 0,
+      "objects": 98,
+      "runtime_s": 65.5465886592865,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.8404443860054016,
+      "final_conflicts": 3,
+      "removed": 0
+    },
+    "1": {
+      "min_view_iou": 0.9036498665809631,
+      "mean_iou": 0.9161853194236755,
+      "collisions": 0,
+      "objects": 108,
+      "runtime_s": 63.09304690361023,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.8506174087524414,
+      "final_conflicts": 3,
+      "removed": 0
+    },
+    "2": {
+      "min_view_iou": 0.8821136355400085,
+      "mean_iou": 0.903899610042572,
+      "collisions": 0,
+      "objects": 96,
+      "runtime_s": 63.65565466880798,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.8783044219017029,
+      "final_conflicts": 3,
+      "removed": 0
+    }
+  },
+  "beam_overlap": {
+    "0": {
+      "min_view_iou": 0.8719474673271179,
+      "mean_iou": 0.897437334060669,
+      "collisions": 0,
+      "objects": 68,
+      "runtime_s": 65.59147930145264,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.8536027669906616,
+      "final_conflicts": 3,
+      "removed": 0
+    },
+    "1": {
+      "min_view_iou": 0.8649568557739258,
+      "mean_iou": 0.8918863534927368,
+      "collisions": 0,
+      "objects": 87,
+      "runtime_s": 67.01198720932007,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.8311577439308167,
+      "final_conflicts": 2,
+      "removed": 1
+    },
+    "2": {
+      "min_view_iou": 0.9035067558288574,
+      "mean_iou": 0.9154173731803894,
+      "collisions": 0,
+      "objects": 86,
+      "runtime_s": 69.49712681770325,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.9093031883239746,
+      "final_conflicts": 3,
+      "removed": 0
+    }
+  },
+  "beam_milp_add": {
+    "0": {
+      "min_view_iou": 0.8578556776046753,
+      "mean_iou": 0.8850799202919006,
+      "collisions": 0,
+      "objects": 74,
+      "runtime_s": 63.37284278869629,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.7110891342163086,
+      "final_conflicts": 3,
+      "removed": 0
+    },
+    "1": {
+      "min_view_iou": 0.8860117793083191,
+      "mean_iou": 0.9020661115646362,
+      "collisions": 0,
+      "objects": 100,
+      "runtime_s": 67.04040932655334,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.7234629392623901,
+      "final_conflicts": 3,
+      "removed": 1
+    },
+    "2": {
+      "min_view_iou": 0.879279613494873,
+      "mean_iou": 0.9005787968635559,
+      "collisions": 0,
+      "objects": 98,
+      "runtime_s": 65.35514116287231,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.8033729791641235,
+      "final_conflicts": 1,
+      "removed": 0
+    }
+  },
+  "beam_raymeet": {
+    "0": {
+      "min_view_iou": 0.913364827632904,
+      "mean_iou": 0.9215551614761353,
+      "collisions": 0,
+      "objects": 107,
+      "runtime_s": 65.94114136695862,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.8634275197982788,
+      "final_conflicts": 2,
+      "removed": 1
+    },
+    "1": {
+      "min_view_iou": 0.8796210289001465,
+      "mean_iou": 0.9020614624023438,
+      "collisions": 0,
+      "objects": 94,
+      "runtime_s": 64.06379747390747,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.8665390014648438,
+      "final_conflicts": 1,
+      "removed": 0
+    },
+    "2": {
+      "min_view_iou": 0.91159987449646,
+      "mean_iou": 0.9214949607849121,
+      "collisions": 0,
+      "objects": 114,
+      "runtime_s": 65.8108925819397,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.8432551622390747,
+      "final_conflicts": 2,
+      "removed": 0
+    }
+  },
+  "cg_base": {
+    "0": {
+      "min_view_iou": 0.7802499532699585,
+      "mean_iou": 0.8444799780845642,
+      "collisions": 0,
+      "objects": 120,
+      "runtime_s": 36.30676770210266,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.529313862323761,
+      "final_conflicts": 3,
+      "removed": 0
+    },
+    "1": {
+      "min_view_iou": 0.7880203723907471,
+      "mean_iou": 0.8410353660583496,
+      "collisions": 0,
+      "objects": 119,
+      "runtime_s": 35.73523211479187,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.6044119596481323,
+      "final_conflicts": 3,
+      "removed": 1
+    },
+    "2": {
+      "min_view_iou": 0.7642066478729248,
+      "mean_iou": 0.8485245704650879,
+      "collisions": 0,
+      "objects": 120,
+      "runtime_s": 37.37013530731201,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.6105853319168091,
+      "final_conflicts": 3,
+      "removed": 0
+    }
+  },
+  "cg_overlap": {
+    "0": {
+      "min_view_iou": 0.8173478841781616,
+      "mean_iou": 0.8534723520278931,
+      "collisions": 0,
+      "objects": 119,
+      "runtime_s": 35.36867570877075,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.6544567346572876,
+      "final_conflicts": 1,
+      "removed": 1
+    },
+    "1": {
+      "min_view_iou": 0.8090631365776062,
+      "mean_iou": 0.8619418144226074,
+      "collisions": 0,
+      "objects": 120,
+      "runtime_s": 37.65005540847778,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.5447739362716675,
+      "final_conflicts": 1,
+      "removed": 0
+    },
+    "2": {
+      "min_view_iou": 0.8081386089324951,
+      "mean_iou": 0.857841968536377,
+      "collisions": 0,
+      "objects": 120,
+      "runtime_s": 37.98445749282837,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.6094823479652405,
+      "final_conflicts": 2,
+      "removed": 0
+    }
+  },
+  "sdf_base": {
+    "0": {
+      "min_view_iou": 0.9029122591018677,
+      "mean_iou": 0.9244076013565063,
+      "collisions": 0,
+      "objects": 87,
+      "runtime_s": 43.301637411117554,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.7715039253234863,
+      "final_conflicts": 3,
+      "removed": 0
+    },
+    "1": {
+      "min_view_iou": 0.9020860195159912,
+      "mean_iou": 0.91889488697052,
+      "collisions": 0,
+      "objects": 109,
+      "runtime_s": 47.280678272247314,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.7773643136024475,
+      "final_conflicts": 2,
+      "removed": 0
+    },
+    "2": {
+      "min_view_iou": 0.8734627366065979,
+      "mean_iou": 0.9065764546394348,
+      "collisions": 0,
+      "objects": 100,
+      "runtime_s": 41.18793725967407,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.717705488204956,
+      "final_conflicts": 2,
+      "removed": 0
+    }
+  },
+  "sdf_raymeet": {
+    "0": {
+      "min_view_iou": 0.9054441452026367,
+      "mean_iou": 0.9265347719192505,
+      "collisions": 0,
+      "objects": 101,
+      "runtime_s": 41.293580055236816,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.767443060874939,
+      "final_conflicts": 0,
+      "removed": 0
+    },
+    "1": {
+      "min_view_iou": 0.9223961234092712,
+      "mean_iou": 0.9314009547233582,
+      "collisions": 0,
+      "objects": 103,
+      "runtime_s": 48.209336280822754,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.7692025303840637,
+      "final_conflicts": 2,
+      "removed": 0
+    },
+    "2": {
+      "min_view_iou": 0.8922630548477173,
+      "mean_iou": 0.9187185764312744,
+      "collisions": 0,
+      "objects": 97,
+      "runtime_s": 43.48394703865051,
+      "zone_min_iou": null,
+      "off_view_similarity": null,
+      "randomness": 0.759112536907196,
+      "final_conflicts": 1,
+      "removed": 0
+    }
+  }
+}

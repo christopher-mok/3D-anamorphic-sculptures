@@ -41,6 +41,7 @@ def refine_assembly(
     deadline: float | None = None,
     project: bool = True,
     collision_weight: float | None = None,
+    w_overlap: float | None = None,
     callback: Callable[[int, dict, Assembly], None] | None = None,
 ) -> RefineResult:
     """Adam on all continuous parameters; returns the best state seen."""
@@ -59,6 +60,12 @@ def refine_assembly(
         ]
     )
     mask = None if trainable is None else trainable.to(a.device).float()
+    if bool(assembly.locked.any()):
+        free = (~assembly.locked).float()
+        mask = free if mask is None else mask * free
+    w_ov = float(rc.get("w_overlap", 0.0)) if w_overlap is None else float(w_overlap)
+    ov_eps = float(rc.get("overlap_eps", 0.01))
+    n_ov = int(rc.get("overlap_points", 8192))
     best = None
     history = []
     initial = None
@@ -70,6 +77,17 @@ def refine_assembly(
             L_final = float(ctx.loss(R, 1.0))
         pen, pen_terms = ctx.constraints.penalty(a, collisions=collisions, lambda_collision=collision_weight)
         total = L_sched + pen
+        if w_ov > 0 and len(a) > 1:  # volumetric penetration (soft overlap volume, hull MC samples)
+            from ..loss.overlap import overlap_loss
+
+            L_ov = overlap_loss(ctx.constraints.sdf, a, ctx.hull_samples(n_ov), ov_eps)
+            total = total + w_ov * L_ov
+            pen_terms["overlap"] = float(L_ov.detach())
+        w_rev = float(ctx.cfg.get("reveal", {}).get("weight", 0.0))
+        if w_rev > 0 and ctx.reveal is not None:  # look UNLIKE the targets from other angles
+            L_rev = ctx.reveal.loss(a, int(ctx.cfg.reveal.get("resolution", 64)))
+            total = total + w_rev * L_rev
+            pen_terms["reveal_similarity"] = float(L_rev.detach())
         score = L_final + float(pen.detach())
         if initial is None:
             initial = L_final

@@ -7,7 +7,7 @@ const v3 = (v: Vec3 | undefined | null, fallback: Vec3 = [0, 0, 0]) =>
   new Vector3(...(Array.isArray(v) && v.length === 3 ? v : fallback));
 
 /** Row-major rotation matrix from an instance, falling back to rotation6d, then identity. */
-function rotationRows(obj: ObjectInstance): [Vec3, Vec3, Vec3] {
+export function rotationRows(obj: ObjectInstance): [Vec3, Vec3, Vec3] {
   const R = obj.rotation_matrix;
   if (Array.isArray(R) && R.length === 3 && R.every((r) => Array.isArray(r) && r.length === 3)) return R;
   const r6 = obj.rotation6d;
@@ -33,7 +33,7 @@ function rotationRows(obj: ObjectInstance): [Vec3, Vec3, Vec3] {
 /** World matrix for `x_world = scale * (R @ x_local) + translation`. */
 export function instanceMatrix(obj: ObjectInstance): Matrix4 {
   const R = rotationRows(obj);
-  const s = isNum(obj.scale) ? obj.scale : isNum(obj.log_scale) ? Math.exp(obj.log_scale) : 1;
+  const s = instanceScale(obj);
   const t = obj.translation ?? [0, 0, 0];
   return new Matrix4().set(
     s * R[0][0], s * R[0][1], s * R[0][2], t[0],
@@ -41,6 +41,43 @@ export function instanceMatrix(obj: ObjectInstance): Matrix4 {
     s * R[2][0], s * R[2][1], s * R[2][2], t[2],
     0, 0, 0, 1,
   );
+}
+
+/** Scale of an instance (scale, else exp(log_scale), else 1). */
+export function instanceScale(obj: ObjectInstance): number {
+  return isNum(obj.scale) ? obj.scale : isNum(obj.log_scale) ? Math.exp(obj.log_scale) : 1;
+}
+
+/** Position / orientation of an instance as three.js values (for gizmo proxies). */
+export function instancePose(obj: ObjectInstance): { position: Vector3; quaternion: Quaternion } {
+  const R = rotationRows(obj);
+  const m = new Matrix4().set(
+    R[0][0], R[0][1], R[0][2], 0,
+    R[1][0], R[1][1], R[1][2], 0,
+    R[2][0], R[2][1], R[2][2], 0,
+    0, 0, 0, 1,
+  );
+  return { position: v3(obj.translation), quaternion: new Quaternion().setFromRotationMatrix(m) };
+}
+
+/**
+ * Copy of `obj` moved to a new pose: translation, row-major rotation_matrix and
+ * rotation6d (= first two COLUMNS of R: [R00, R10, R20, R01, R11, R21]); scale unchanged.
+ */
+export function withPose(obj: ObjectInstance, position: Vector3, quaternion: Quaternion): ObjectInstance {
+  const e = new Matrix4().makeRotationFromQuaternion(quaternion.clone().normalize()).elements; // column-major
+  const R = (r: number, c: number) => e[c * 4 + r];
+  const rows: [Vec3, Vec3, Vec3] = [
+    [R(0, 0), R(0, 1), R(0, 2)],
+    [R(1, 0), R(1, 1), R(1, 2)],
+    [R(2, 0), R(2, 1), R(2, 2)],
+  ];
+  return {
+    ...obj,
+    translation: position.toArray() as Vec3,
+    rotation_matrix: rows,
+    rotation6d: [R(0, 0), R(1, 0), R(2, 0), R(0, 1), R(1, 1), R(2, 1)],
+  };
 }
 
 /**

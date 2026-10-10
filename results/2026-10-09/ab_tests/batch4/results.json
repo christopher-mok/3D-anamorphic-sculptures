@@ -1,0 +1,154 @@
+{
+  "beam_no_raymeet": {
+    "3": {
+      "min_view_iou": 0.8806010484695435,
+      "mean_iou": 0.9044978618621826,
+      "collisions": 0,
+      "objects": 101,
+      "runtime_s": 62.960108041763306,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7776217460632324,
+      "randomness": 0.8725435733795166,
+      "final_conflicts": 4,
+      "removed": 0
+    },
+    "4": {
+      "min_view_iou": 0.8811248540878296,
+      "mean_iou": 0.9013727903366089,
+      "collisions": 0,
+      "objects": 97,
+      "runtime_s": 68.05598711967468,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.757485568523407,
+      "randomness": 0.7792969942092896,
+      "final_conflicts": 6,
+      "removed": 0
+    },
+    "5": {
+      "min_view_iou": 0.8906087279319763,
+      "mean_iou": 0.9109725952148438,
+      "collisions": 0,
+      "objects": 100,
+      "runtime_s": 65.12683057785034,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7594136595726013,
+      "randomness": 0.8404951095581055,
+      "final_conflicts": 6,
+      "removed": 0
+    }
+  },
+  "beam_raymeet": {
+    "3": {
+      "min_view_iou": 0.9061749577522278,
+      "mean_iou": 0.9230117797851562,
+      "collisions": 0,
+      "objects": 111,
+      "runtime_s": 65.79331684112549,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7664934396743774,
+      "randomness": 0.8961212635040283,
+      "final_conflicts": 1,
+      "removed": 0
+    },
+    "4": {
+      "min_view_iou": 0.9114786982536316,
+      "mean_iou": 0.9197201132774353,
+      "collisions": 0,
+      "objects": 110,
+      "runtime_s": 68.44424343109131,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7593812346458435,
+      "randomness": 0.9407984018325806,
+      "final_conflicts": 5,
+      "removed": 0
+    },
+    "5": {
+      "min_view_iou": 0.8890650868415833,
+      "mean_iou": 0.9055674076080322,
+      "collisions": 0,
+      "objects": 99,
+      "runtime_s": 62.711559534072876,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7488759756088257,
+      "randomness": 0.8532587289810181,
+      "final_conflicts": 2,
+      "removed": 0
+    }
+  },
+  "cg_no_overlap": {
+    "3": {
+      "min_view_iou": 0.8052741289138794,
+      "mean_iou": 0.8589603900909424,
+      "collisions": 0,
+      "objects": 119,
+      "runtime_s": 35.663710594177246,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7654381990432739,
+      "randomness": 0.4746803939342499,
+      "final_conflicts": 3,
+      "removed": 1
+    },
+    "4": {
+      "min_view_iou": 0.810675859451294,
+      "mean_iou": 0.8505991697311401,
+      "collisions": 0,
+      "objects": 119,
+      "runtime_s": 36.59113383293152,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7579306960105896,
+      "randomness": 0.631497859954834,
+      "final_conflicts": 4,
+      "removed": 1
+    },
+    "5": {
+      "min_view_iou": 0.8041165471076965,
+      "mean_iou": 0.8408364057540894,
+      "collisions": 0,
+      "objects": 119,
+      "runtime_s": 35.09420037269592,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.771455705165863,
+      "randomness": 0.406083881855011,
+      "final_conflicts": 2,
+      "removed": 1
+    }
+  },
+  "cg_overlap": {
+    "3": {
+      "min_view_iou": 0.8252825736999512,
+      "mean_iou": 0.8708496689796448,
+      "collisions": 0,
+      "objects": 120,
+      "runtime_s": 37.08351373672485,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7553830742835999,
+      "randomness": 0.45350921154022217,
+      "final_conflicts": 2,
+      "removed": 0
+    },
+    "4": {
+      "min_view_iou": 0.8206179141998291,
+      "mean_iou": 0.869604229927063,
+      "collisions": 0,
+      "objects": 120,
+      "runtime_s": 36.674301862716675,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7657267451286316,
+      "randomness": 0.5920619368553162,
+      "final_conflicts": 1,
+      "removed": 0
+    },
+    "5": {
+      "min_view_iou": 0.8434005379676819,
+      "mean_iou": 0.8755254745483398,
+      "collisions": 0,
+      "objects": 119,
+      "runtime_s": 37.450819969177246,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7610933184623718,
+      "randomness": 0.4317462146282196,
+      "final_conflicts": 1,
+      "removed": 1
+    }
+  }
+}

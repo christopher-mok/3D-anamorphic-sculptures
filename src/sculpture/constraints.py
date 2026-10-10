@@ -35,8 +35,17 @@ class ConstraintEvaluator:
         self.log_smin = math.log(float(cfg.scale.min))
         self.log_smax = math.log(float(cfg.scale.max))
         # fixed-scale mode: every instance has the same size; apparent size comes from depth only
-        self.scale_fixed = str(cfg.scale.get("mode", "free")) == "fixed"
+        # scale is not a parameter in "fixed" (one uniform size) and "native" (each model keeps the
+        # size of its source file x native_factor) modes
+        self.scale_mode = str(cfg.scale.get("mode", "free"))
+        self.scale_fixed = self.scale_mode in ("fixed", "native")
         self.fixed_log_scale = math.log(float(cfg.scale.get("fixed", 0.15)))
+        if self.scale_mode == "native":
+            factor = float(cfg.scale.get("native_factor", 0.3))
+            radii = [1.0 / float(e.data["norm_scale"]) for e in library.entries]
+            self.fixed_log_scales = torch.log(torch.tensor(radii, device=library.device) * factor)
+        else:
+            self.fixed_log_scales = torch.full((len(library),), self.fixed_log_scale, device=library.device)
         self.bmin = torch.tensor(cfg.bounding_volume.min, dtype=torch.float32, device=library.device)
         self.bmax = torch.tensor(cfg.bounding_volume.max, dtype=torch.float32, device=library.device)
         self.sdf_resolution = int(cfg.meshes.sdf_resolution)
@@ -126,7 +135,8 @@ class ConstraintEvaluator:
             g = torch.nn.functional.normalize(g, dim=-1)
             t[need] = t[need] - (phi.detach()[need] + vs)[:, None] * g[need]
         if self.scale_fixed:
-            return self._project_fixed_scale(a, t)
+            out, valid = self._project_fixed_scale(a, t)
+            return self._keep_locked(a, out, valid)
         with torch.no_grad():
             alphas = torch.tensor([1.0, 0.92, 0.85, 0.78, 0.7, 0.62, 0.55, 0.47, 0.4, 0.32, 0.25, 0.18], device=t.device)
             N, A = len(a), len(alphas)
@@ -137,7 +147,17 @@ class ConstraintEvaluator:
             first = torch.where(ok.any(1), ok.float().argmax(1), torch.full((N,), A - 1, device=t.device))
             new_ls = ls[torch.arange(N, device=t.device), first]
             valid = ok.any(1)
-        return a.with_params(translation=t, log_scale=new_ls).detach(), valid
+        return self._keep_locked(a, a.with_params(translation=t, log_scale=new_ls).detach(), valid)
+
+    @staticmethod
+    def _keep_locked(orig: Assembly, out: Assembly, valid: torch.Tensor):
+        """Locked pieces are user decisions: restore them unchanged and treat them as valid."""
+        if not bool(orig.locked.any()):
+            return out, valid
+        lk = orig.locked
+        t, ls, r6 = out.translation.clone(), out.log_scale.clone(), out.rot6d.clone()
+        t[lk], ls[lk], r6[lk] = orig.translation.detach()[lk], orig.log_scale.detach()[lk], orig.rot6d.detach()[lk]
+        return out.with_params(translation=t, rot6d=r6, log_scale=ls), valid | lk
 
     def _project_fixed_scale(self, a: Assembly, t: torch.Tensor, iters: int = 12):
         """Fixed-scale feasibility: the size may not change, so move the object instead.
@@ -146,7 +166,7 @@ class ConstraintEvaluator:
         2. If still violating: a depth ladder along the ray from the first camera (keeps the
            object's projection in that view; farther away = smaller in the image).
         """
-        ls = torch.full_like(a.log_scale.detach(), self.fixed_log_scale)
+        ls = self.fixed_log_scales[a.mesh_ids].clone()
         b = a.with_params(translation=t, log_scale=ls).detach()
         n = min(self.n_contain, 128)
         for _ in range(iters):

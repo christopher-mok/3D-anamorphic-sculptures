@@ -121,6 +121,30 @@ def make_complex_models(folder) -> list[Path]:
     return out
 
 
+def make_sized_models(folder) -> list[Path]:
+    """Pool with a wide range of NATIVE sizes (source units) for scale.mode = native and the
+    coarse-to-fine schedule: large boulders / slabs down to beads and sticks."""
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    meshes = {
+        "boulder.ply": _displace(trimesh.creation.icosphere(subdivisions=3, radius=1.0), 0.08, 3.0, 1),
+        "big_cube.obj": trimesh.creation.box((1.4, 1.4, 1.4)),
+        "slab.stl": trimesh.creation.box((1.6, 1.0, 0.3)),
+        "column.stl": trimesh.creation.cylinder(radius=0.3, height=1.4, sections=32),
+        "block.obj": trimesh.creation.box((0.5, 0.5, 0.5)),
+        "pebble.ply": trimesh.creation.icosphere(subdivisions=3, radius=0.25),
+        "stick.ply": trimesh.creation.box((0.8, 0.08, 0.08)),
+        "bead.ply": trimesh.creation.icosphere(subdivisions=2, radius=0.12),
+        "tiny_cube.obj": trimesh.creation.box((0.15, 0.15, 0.15)),
+    }
+    out = []
+    for name, m in meshes.items():
+        p = folder / name
+        m.export(p)
+        out.append(p)
+    return out
+
+
 def make_demo_targets(folder, size: int = 512) -> list[Path]:
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)

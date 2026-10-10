@@ -29,6 +29,8 @@ export interface ObjectInstance {
   rotation6d: number[];                 // 6 numbers (first two columns of R)
   log_scale: number;
   scale: number;
+  /** Must stay exactly fixed (lock-and-rerun). Absent = false. */
+  locked?: boolean;
 }
 
 export interface Assembly {
@@ -52,7 +54,7 @@ export interface Metrics {
   renderer_calls: number;
 }
 
-export type MethodName = "beam" | "column_generation" | "sdf_ray";
+export type MethodName = "beam" | "column_generation" | "sdf_ray" | "chained";
 
 export interface MethodProgress {
   status: "pending" | "running" | "done" | "failed" | "cancelled" | "skipped";
@@ -123,6 +125,17 @@ export interface JobRequest {
   methods: MethodName[];
   preset: Preset;
   overrides?: Record<string, unknown>;  // nested config overrides ("Custom")
+  /** Lock-and-rerun: optimize around the locked pieces of an (edited) assembly. */
+  initial?: InitialAssembly;
+}
+
+export interface InitialAssembly {
+  /** The full edited assembly (same object schema as results). */
+  assembly: Assembly;
+  /** Indices into `assembly.objects` that must stay exactly fixed. */
+  locked: number[];
+  /** true: unlocked pieces are the warm start (may move / be replaced); false: they are discarded. */
+  keep_unlocked: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -164,16 +177,18 @@ export interface MethodResultFile {
   config: Record<string, unknown>;
 }
 
-export const ALL_METHODS: MethodName[] = ["beam", "column_generation", "sdf_ray"];
+export const ALL_METHODS: MethodName[] = ["beam", "column_generation", "sdf_ray", "chained"];
 
 export const METHOD_LABELS: Record<MethodName, string> = {
   beam: "Beam Constructive",
   column_generation: "Column Generation",
   sdf_ray: "SDF Ray Packing",
+  chained: "Chained (SDF→CG→Beam)",
 };
 
 export const METHOD_SHORT: Record<MethodName, string> = {
   beam: "Beam",
   column_generation: "Column Generation",
   sdf_ray: "SDF Ray",
+  chained: "Chained",
 };

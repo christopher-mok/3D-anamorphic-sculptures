@@ -53,7 +53,7 @@ class SDFRayOptimizer(OptimizationMethod):
 
     # ------------------------------------------------------------ initialization
     @torch.no_grad()
-    def greedy_init(self, n_objects: int, gen: torch.Generator, base: Assembly | None = None) -> Assembly:
+    def greedy_init(self, n_objects: int, gen: torch.Generator, base: Assembly | None = None, allowed=None) -> Assembly:
         """Target-informed init: pool of residual-guided / bank-retrieved candidates,
         greedily selected by exact union utility at low resolution."""
         ctx, cfg = self.ctx, self.cfg
@@ -63,7 +63,7 @@ class SDFRayOptimizer(OptimizationMethod):
         R = ctx.render(base, res) if len(base) else torch.zeros_like(I)
         W = secant_utility(R, I, ctx.loss.w_cov, ctx.loss.w_neg)
         pool = ctx.generator.generate(max(n_objects * int(cfg.init_pool_factor), 32), W, uncovered(R, I), gen,
-                                      GeneratorOptions(explore_probability=0.1, bank_probability=0.8))
+                                      GeneratorOptions(explore_probability=0.1, bank_probability=0.8, allowed_meshes=allowed))
         if ctx.strict:
             pool, valid = ctx.constraints.project_inside(pool)
             pool = pool[valid]
@@ -145,7 +145,12 @@ class SDFRayOptimizer(OptimizationMethod):
             a = assembly_from_dict(self._restored["current"], ctx.library, ctx.device)
         else:
             self.phase = "init"
-            a = self.greedy_init(int(cfg.initial_objects), gen)
+            init = self.initial_assembly()
+            if init is not None:  # lock-and-rerun / chained warm start, topped up to initial_objects
+                extra = self.greedy_init(max(0, int(cfg.initial_objects) - len(init)), gen, base=init)
+                a = Assembly.concat([init, extra]) if len(extra) else init
+            else:
+                a = self.greedy_init(int(cfg.initial_objects), gen)
         log.info("[sdf_ray] %d fg rays (%d unsatisfiable), %d bg rays, %d initial objects", stats["fg_rays"], stats["fg_unsatisfiable"], stats["bg_rays"], len(a))
 
         iters = int(cfg.iterations)
@@ -217,6 +222,11 @@ class SDFRayOptimizer(OptimizationMethod):
             loss = L_ray + pen
             opt.zero_grad(set_to_none=True)
             loss.backward()
+            if bool(p.locked.any()):  # locked pieces never move
+                free = (~p.locked).float()
+                for g_ in (p.translation.grad, p.rot6d.grad, p.log_scale.grad):
+                    if g_ is not None:
+                        g_ *= free.view(-1, *([1] * (g_.dim() - 1)))
             opt.step()
             self.iteration += 1
             self.current = p.detach()
@@ -262,6 +272,7 @@ class SDFRayOptimizer(OptimizationMethod):
         n = max(1, int(round(float(self.cfg.reseed_fraction) * len(a))))
         weak = torch.argsort(ownership.float())[:n]
         weak = weak[ownership[weak] <= ownership.float().median() * 0.25]
+        weak = weak[~a.locked[weak]]
         if len(weak) == 0:
             return a
         keep = torch.ones(len(a), dtype=torch.bool, device=a.device)

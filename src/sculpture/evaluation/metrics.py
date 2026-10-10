@@ -39,10 +39,17 @@ def evaluate_assembly(ctx, assembly: Assembly, runtime_s: float = 0.0, renderer_
     # final fidelity is measured with the ORIGINAL meshes substituted back (what gets exported /
     # fabricated); the proxy result is reported alongside to expose the LOD substitution error
     lod = str(ctx.cfg.evaluation.get("lod", "original"))
+    V0 = ctx.num_primary_views or ctx.num_views
     R = ctx.render(a, res, lod=lod)
-    m = mask_metrics(R, ctx.targets.mask(res))
+    T = ctx.targets.mask(res)
+    m = mask_metrics(R[:V0], T[:V0])            # the user's views
+    if ctx.num_views > V0:                       # viewing zone: worst / mean over every zone view
+        mz = mask_metrics(R, T)
+        m["zone_min_iou"], m["zone_mean_iou"] = mz["min_view_iou"], mz["mean_iou"]
+    if ctx.reveal is not None:                   # how much the sculpture resembles a target from other angles
+        m["off_view_similarity"] = float(ctx.reveal.similarity(a, 128).mean())
     if lod != "proxy":
-        mp = mask_metrics(ctx.render(a, res, lod="proxy"), ctx.targets.mask(res))
+        mp = mask_metrics(ctx.render(a, res, lod="proxy")[:V0], T[:V0])
         m["proxy_min_view_iou"] = mp["min_view_iou"]
         m["lod_substitution_delta"] = m["min_view_iou"] - mp["min_view_iou"]
     m["eval_lod"] = lod

@@ -1,0 +1,10 @@
+{
+  "preset": "fast",
+  "seeds": [3, 4, 5],
+  "arms": {
+    "beam_no_raymeet": {"method": "beam", "set": ["proposals.ray_meet_fraction=0.0"], "baseline": true},
+    "beam_raymeet":    {"method": "beam", "set": ["proposals.ray_meet_fraction=0.5"], "vs": "beam_no_raymeet"},
+    "cg_no_overlap":   {"method": "column_generation", "set": ["column_generation.polish_overlap=0"], "baseline": true},
+    "cg_overlap":      {"method": "column_generation", "set": ["column_generation.polish_overlap=2"], "vs": "cg_no_overlap"}
+  }
+}

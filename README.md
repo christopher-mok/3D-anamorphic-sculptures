@@ -163,6 +163,52 @@ Stress test (`python -m sculpture.cli make-demo --complex` writes a ~1M-triangle
 | intersections of the originals (final) | 0 | 0 |
 | original-mesh intersection check, 100-piece overlap scene | — | 368 s → 16 s with the 3-tier check |
 
+## 5d. Merged method, editing and viewing options
+
+**Method 4: Chained** (`--method chained`, `methods/chained/`): SDF ray packing → column generation in *anchor* mode → beam search, each with a share of `chained.max_runtime_s` (`sdf_fraction`, `cg_fraction`; beam gets the rest).
+- Each stage is the unmodified standalone implementation, run as an intermediate stage: it keeps the assembly feasible but skips the shared final stages.
+- The column-generation stage fixes the incoming pieces as columns and only fills holes around them. Beam is rooted at the result, then grows and repairs.
+- The shared final stages run once at the end. The three standalone methods are unchanged, for comparison.
+
+**Lock-and-rerun editing**:
+- **UI:** in Results mode, click pieces to select them; then lock, unlock, delete, or move/rotate them with the gizmo. *Rerun with locked pieces* submits a job with `initial = {assembly, locked, keep_unlocked}`.
+- **CLI:** `--init result.json --lock 0,3,7 | all [--discard-unlocked]`.
+
+Locked pieces (`Assembly.locked`, saved as `"locked": true` in the JSON) are never moved, swapped, shrunk or removed by any stage:
+- refinement masks their gradients;
+- hull projection restores them;
+- intersection resolution picks unlocked victims;
+- diversity swaps and beam repairs skip them;
+- column generation fixes them at x = 1.
+
+Unlocked pieces are the warm start: the beam root, the SDF initialization, or ordinary columns.
+
+**Viewing zone** (`viewing_zone.radius`, `samples`): `samples` extra cameras per user camera sit on a circle of that radius around it, perpendicular to the view direction and looking at the same point, all sharing that camera's target. They are ordinary views everywhere (hull, losses, MILP, rays), so the illusion must hold for every eye position in the zone. Metrics report the user views plus `zone_min_iou` / `zone_mean_iou`.
+
+**Reveal** (`reveal.weight`): off-axis cameras orbit the look-at point (rotations about the up axis and an elevated ring, at least 25° from every user camera). The shared refinement penalizes the soft Dice similarity between each off-axis silhouette and the most similar target, so the image only "snaps together" from the intended viewpoint. `off_view_similarity` is always reported.
+
+**Native sizes** (`scale.mode: native`, `native_factor`): scale is not a parameter. Each model keeps its source-file size × `native_factor`, and pieces that must look bigger move toward the camera (candidates are placed at depth `z = f·s/r` for the chosen model's size). `make-demo --sized` writes a mixed-size pool, from boulders and slabs down to beads.
+
+**A/B tests** (`scripts/ab_test.py` + `scripts/ab_specs/*.json`; same code, paired seeds, fast preset, two views). Techniques that did not help were not adopted. The raw results are in `results/2026-10-09/ab_tests/`:
+
+| Technique | Result (min-view IoU, paired Δ, wins / 3 seeds) | Decision |
+|---|---|---|
+| Overlap loss in Beam's refinement | −0.011 (1/3) | not used for Beam |
+| Overlap loss in column generation's polish | **+0.034 (3/3)**; clean re-test +0.023 (3/3) | adopted (`column_generation.polish_overlap: 2`) |
+| Beam multi-add sets chosen by MILP (exact max-gain non-conflicting set) | −0.017 (0/3) | removed |
+| Ray-meet candidate placement, Beam | +0.011 (2/3); clean re-test +0.018 (2/3) | adopted (`proposals.ray_meet_fraction: 0.5`) |
+| Ray-meet candidate placement, SDF ray | **+0.014 (3/3)** | adopted |
+| **Chained** method vs beam | **+0.009 (3/3)** | new method 4 |
+| Multi-start ×3 (concurrent, same wall time), Beam | −0.012 (1/3) | removed |
+| Multi-start ×3, SDF ray | −0.013 (0/3) | removed |
+| Multi-start ×3, column generation (GPU idle during its MILP) | +0.004 (2/3), within seed noise (sd 0.02) | removed |
+| Coarse-to-fine with native sizes (large models first, small after a stall), Beam | −0.052 (1/3) | removed |
+| Coarse-to-fine with native sizes, SDF ray | −0.114 (1/3) | removed |
+
+The exact MILP multi-add lost to the greedy choice on all three seeds. Its sets have a higher sum of individual lookahead gains, but that did not turn into better final assemblies; the cause was not investigated further.
+
+Concurrent multi-start loses because Beam and SDF ray already use their whole budget: three starts share one GPU, so each gets about a third of the throughput. For coarse-to-fine the likely reason (not verified) is that Beam already picks the best-fitting size at every step, so holding back the small models only delays the boundary detail they provide.
+
 ## 6. Running the methods
 
 ```bash
@@ -345,6 +391,17 @@ The strict-containment upper bound for this pair is 0.981 and 0.983, which limit
 | Medium (seeds 0–1) | + overlap | 0.896 | ≈94 | 4–5 | 0 |
 
 On fast, it gives +0.031 IoU (better on 4 of 5 seeds, tied on 1). On Medium, IoU is unchanged, but it reaches that with half the pieces, about 3× fewer intersections to repair, and no removals. The final resolution stage stays as the guarantee, because shallow slivers have almost no volume.
+
+### Final benchmark, merged method (2026-10-09)
+
+This version vs. the previous push `4263c72`, mean min-view IoU, 0 intersections in every run. Details, all A/B data and renders are in `results/2026-10-09/`.
+
+| Preset | Beam | Column generation | SDF ray | **Chained** |
+|---|---|---|---|---|
+| fast (3 seeds), `4263c72` | 0.883 | 0.821 | 0.895 | — |
+| fast (3 seeds), this version | 0.875 | 0.817 | **0.907** | **0.906** |
+| Medium (1 seed), `4263c72` | 0.890 | 0.876 | 0.913 | — |
+| Medium (1 seed), this version | 0.895 | **0.901** | 0.922 | **0.935** |
 
 ## 11. Code map
 

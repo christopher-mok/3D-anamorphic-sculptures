@@ -29,8 +29,9 @@ max_objects: 200
 scale:
   min: 0.04
   max: 0.6
-  mode: free                # free | fixed. fixed: every instance has radius `fixed`; objects that must
-  fixed: 0.15               #   look bigger have to move toward the camera instead of growing
+  mode: free                # free | fixed | native. fixed: every instance has radius `fixed`; native: each
+  fixed: 0.15               #   model keeps its source-file size x native_factor. In both, pieces that must
+  native_factor: 0.3        #   look bigger move toward the camera instead of growing.
 
 meshes:
   extensions: [".obj", ".ply", ".stl", ".glb", ".gltf", ".off"]
@@ -86,6 +87,24 @@ constraints:
   resolve_intersections: true   # shared final stage: separate / shrink / remove until intersection-free
   resolve_rounds: 3
 
+# Optional viewing zone: the illusion must hold for eye positions on a circle of this radius
+# around each camera (perpendicular to its view direction). Adds `samples` views per camera.
+viewing_zone:
+  radius: 0.0                 # world units; 0 = off
+  samples: 4
+
+# Optional "reveal": reward NOT resembling the targets from other angles (shared refinement / polish).
+reveal:
+  weight: 0.0                 # e.g. 0.05; 0 = off (the off_view_similarity metric is always reported)
+  angles_deg: [45, 135, 180, 225, 315]
+  elevations_deg: [0, 35]
+  min_separation_deg: 25
+  resolution: 64
+
+proposals:
+  ray_meet_fraction: 0.5      # share of candidate positions placed where uncovered rays of the views meet
+                              # (A/B: beam +0.011, SDF ray +0.014 min-view IoU)
+
 # Piece-type diversity ("randomness" = normalized entropy of the per-type counts).
 # weight > 0 adds  weight * KL(counts || target) / log M  to the objective: beam children are
 # scored with it, and a shared final swap stage (all methods) changes over-used types into
@@ -100,6 +119,9 @@ diversity:
   orientations_per_type: 3  # silhouette-compatible bank orientations per tried type
 
 refine:
+  w_overlap: 0.0              # volumetric penetration in the shared refinement (A/B: beam -0.011 -> off by default)
+  overlap_eps: 0.01
+  overlap_points: 8192
   lr_translation: 0.01
   lr_rotation: 0.03
   lr_log_scale: 0.02
@@ -171,7 +193,9 @@ column_generation:
   milp_gap: 0.002
   max_conflict_rounds: 10
   polish_steps: 200
+  polish_overlap: 2.0         # volumetric penetration in CG's polishes (A/B: +0.034 min-view IoU, 3/3 seeds)
   anchor_rounds: 2            # anchored rounds whose time is reserved before the first MILP
+  init_mode: columns          # warm start: unlocked pieces as ordinary columns (columns) or anchored (anchor)
   max_anchor_rounds: 6        # keep anchoring while time remains ...
   anchor_patience: 2          # ... and stop after this many rounds without improvement
   anchor_pricing_rounds: 2
@@ -208,3 +232,9 @@ sdf_ray:
   polish_progress_start: 0.8
   anytime: true               # keep growing + re-packing while the time budget allows
   max_extra_cycles: 20
+
+# ---------------------------------------------------------------- Method 4 (merged)
+chained:
+  max_runtime_s: 300
+  sdf_fraction: 0.3           # SDF ray packing share of the budget
+  cg_fraction: 0.3            # column-generation hole filling share; beam gets the rest

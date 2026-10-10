@@ -207,3 +207,24 @@ preprocessing/target_0.png, target_1.png, hull_preview.obj, hull.npz, diagnostic
 <method>/metrics.json, optimization.csv
 comparison.json, comparison.csv
 ```
+
+## Frontend-facing additions (chained method, design options, lock-and-rerun)
+
+* `MethodName` also includes `"chained"` (display name "Chained (SDF→CG→Beam)"); it appears in
+  `/api/defaults.methods`, `JobStatus.methods` and comparison rows like the other methods.
+  The UI lists it always and disables it when `/api/defaults.methods` does not offer it.
+* Design-option overrides sent by the UI (only keys that differ from the defaults):
+  ```ts
+  scale?: { mode: "free" | "fixed" | "native"; fixed?: number; native_factor?: number /* default 0.3 */ };
+  viewing_zone?: { radius: number /* 0 = off, UI range 0..0.6 */; samples?: number /* default 4, 2..8 */ };
+  reveal?: { weight: number /* UI range 0.01..0.2, sent only when enabled */ };
+  ```
+  The viewer draws a ring of radius `viewing_zone.radius` around each camera, perpendicular to its view direction.
+* `ObjectInstance.locked?: boolean` (default false): the piece was kept fixed by a lock-and-rerun job.
+* `JobRequest.initial?: { assembly: Assembly; locked: number[]; keep_unlocked: boolean }`:
+  `assembly.objects` is the full edited assembly (same object schema as results; edited pieces have a new
+  `translation`, row-major `rotation_matrix` and `rotation6d` = `[R00, R10, R20, R01, R11, R21]`, scale unchanged).
+  `locked` = indices into `assembly.objects` that must stay exactly fixed. `keep_unlocked`: true = the unlocked
+  pieces are the warm start (they may move / be replaced); false = they are discarded. The UI's "Rerun with locked
+  pieces" sends the viewed job's `models_dir`, `targets`, `cameras`, `methods` and `preset`, plus either the current
+  design-option / bounds overrides or the job's own `overrides`. Edits are client-side only (never persisted).

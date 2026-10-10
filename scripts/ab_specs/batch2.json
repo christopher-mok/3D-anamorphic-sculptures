@@ -1,0 +1,15 @@
+{
+  "preset": "fast",
+  "seeds": [0, 1, 2],
+  "arms": {
+    "beam_base":        {"method": "beam", "baseline": true},
+    "beam_multistart3": {"method": "beam", "set": ["multistart.starts=3"], "vs": "beam_base"},
+    "chained":          {"method": "chained", "vs": "beam_base"},
+    "sdf_base":         {"method": "sdf_ray", "baseline": true},
+    "sdf_multistart3":  {"method": "sdf_ray", "set": ["multistart.starts=3"], "vs": "sdf_base"},
+    "beam_native":      {"method": "beam", "models": "assets/models_sized", "set": ["scale.mode=native", "scale.native_factor=0.35", "scale.coarse_to_fine=false"], "baseline": true},
+    "beam_native_c2f":  {"method": "beam", "models": "assets/models_sized", "set": ["scale.mode=native", "scale.native_factor=0.35", "scale.coarse_to_fine=true"], "vs": "beam_native"},
+    "sdf_native":       {"method": "sdf_ray", "models": "assets/models_sized", "set": ["scale.mode=native", "scale.native_factor=0.35", "scale.coarse_to_fine=false"], "baseline": true},
+    "sdf_native_c2f":   {"method": "sdf_ray", "models": "assets/models_sized", "set": ["scale.mode=native", "scale.native_factor=0.35", "scale.coarse_to_fine=true"], "vs": "sdf_native"}
+  }
+}

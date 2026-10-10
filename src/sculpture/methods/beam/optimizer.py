@@ -107,7 +107,8 @@ class BeamSearchOptimizer(OptimizationMethod):
         if cfg.multi_add and len(order) >= 2 and room >= 2:
             with torch.no_grad():
                 S_opt = ctx.render_instances(opt, rl)
-            chosen = select_non_conflicting(S_opt, order, min(int(cfg.multi_add_max), room), float(cfg.multi_add_overlap), int(cfg.multi_add_dilation_px))
+            n_max = min(int(cfg.multi_add_max), room)
+            chosen = select_non_conflicting(S_opt, order, n_max, float(cfg.multi_add_overlap), int(cfg.multi_add_dilation_px))
             if len(chosen) >= 2:
                 idx = torch.tensor(chosen, device=ctx.device)
                 child = Assembly.concat([entry.assembly, opt[idx]])
@@ -172,7 +173,8 @@ class BeamSearchOptimizer(OptimizationMethod):
             self.beam = [make_entry(ctx, assembly_from_dict(b["assembly"], ctx.library, ctx.device), rl, b.get("lineage", "resumed")) for b in self._restored["beam"]]
             self.stall = int(self._restored.get("stall", 0))
         else:
-            self.beam = [make_entry(ctx, Assembly.empty(ctx.device), rl)]
+            root = self.initial_assembly()
+            self.beam = [make_entry(ctx, root if root is not None else Assembly.empty(ctx.device), rl, "initial" if root is not None else "root")]
         self.info.update({"beam_width": int(cfg.beam_width)})
         stop = None
         while True:

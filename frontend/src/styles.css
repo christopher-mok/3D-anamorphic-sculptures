@@ -231,3 +231,27 @@ tr.best { background: var(--best); }
 tr.best td:first-child { color: var(--ok); font-weight: 600; }
 tr.selected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .star { color: var(--ok); }
+
+/* ---------- design options ---------- */
+.field-row.wide { grid-template-columns: 112px minmax(0, 1fr); }
+.field-row.wide input[type="range"] { width: 100%; }
+.field-row.wide .segmented button { padding: 3px 8px; }
+
+/* ---------- assembly editing (Results mode) ---------- */
+.viewer-side { position: absolute; top: 10px; right: 10px; max-height: calc(100% - 20px); overflow-y: auto; z-index: 2; }
+.edit-panel {
+  width: 280px; background: rgba(23, 26, 32, 0.94); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.edit-panel .hint { margin: 0; }
+.edit-header { display: flex; align-items: center; gap: 6px; }
+.edit-selection { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 6px; display: flex; flex-direction: column; gap: 6px; }
+.edit-selection > div:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.edit-buttons { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.edit-buttons .segmented button { padding: 2px 8px; font-size: 11px; }
+.edit-rerun { border-top: 1px solid var(--border); padding-top: 6px; display: flex; flex-direction: column; gap: 2px; }
+.edit-rerun .checkbox { margin: 2px 0; }
+.edit-rerun .primary { margin-top: 4px; padding: 6px; }
+.edit-panel-collapsed { background: rgba(23, 26, 32, 0.94); }
+button.danger-text:not(:disabled) { color: var(--danger); }
+.badge-edited { color: var(--amber); border-color: var(--amber); }

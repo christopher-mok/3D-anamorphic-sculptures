@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-METHOD_NAMES = ("beam", "column_generation", "sdf_ray")
+METHOD_NAMES = ("beam", "column_generation", "sdf_ray", "chained")
 
 DISPLAY_NAMES = {
     "beam": "Beam Constructive",
     "column_generation": "Column Generation",
     "sdf_ray": "SDF Ray Packing",
+    "chained": "Chained (SDF -> CG -> Beam)",
 }
 
 
@@ -24,4 +25,8 @@ def get_method(name: str):
         from .sdf_ray.optimizer import SDFRayOptimizer
 
         return SDFRayOptimizer
+    if name == "chained":
+        from .chained.optimizer import ChainedOptimizer
+
+        return ChainedOptimizer
     raise KeyError(f"unknown method {name!r}; choose from {METHOD_NAMES}")

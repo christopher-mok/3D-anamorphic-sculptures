@@ -121,6 +121,8 @@ class OptimizationMethod(ABC):
         self._last_report = 0.0
         self._last_ckpt = time.time()
         self.info: dict[str, Any] = {}
+        # set by the chained method: run as an intermediate stage (skip the shared final stages)
+        self.intermediate = False
 
     # ------------------------------------------------------------ budgets
     @property
@@ -199,7 +201,8 @@ class OptimizationMethod(ABC):
             if assembly is not None:
                 with torch.no_grad():
                     pr = int(self.ctx.cfg.progress.preview_resolution)
-                    event["preview"] = self.ctx.render(assembly.detach(), pr).cpu().numpy()
+                    V0 = self.ctx.num_primary_views or self.ctx.num_views
+                    event["preview"] = self.ctx.render(assembly.detach(), pr).cpu().numpy()[:V0]
                 event["assembly"] = assembly_to_dict(assembly, self.ctx.library)
             self.reporter.update(self.name, event)
         self.maybe_checkpoint()
@@ -247,6 +250,11 @@ class OptimizationMethod(ABC):
         log.info("[%s] resumed from iteration %d (best loss %.5f)", self.name, self.iteration, self.best_loss)
         return True
 
+    def initial_assembly(self) -> Assembly | None:
+        """Starting assembly from lock-and-rerun editing / a previous chained stage (or None)."""
+        a = getattr(self.ctx, "initial_assembly", None)
+        return None if a is None or len(a) == 0 else a.detach()
+
     # ------------------------------------------------------------ shared final stages
     def finalize(self, a: Assembly) -> Assembly:
         """Shared post-processing applied identically by every method:
@@ -259,6 +267,12 @@ class OptimizationMethod(ABC):
 
         ctx = self.ctx
         a = a.detach()
+        if self.intermediate:  # chained stage: keep it feasible, leave the final stages to the chain
+            if ctx.strict and len(a):
+                a, valid = ctx.constraints.project_inside(a)
+                a = a[valid]
+            self.best_assembly = a
+            return a
         if ctx.strict and len(a):
             # strict containment: project, and drop pieces that cannot be made to fit (invalid geometry)
             a, valid = ctx.constraints.project_inside(a)
@@ -273,6 +287,16 @@ class OptimizationMethod(ABC):
             self.phase = "resolve_intersections"
             a, st = resolve_intersections(ctx, a, int(ctx.cfg.constraints.get("resolve_rounds", 6)))
             self.info["intersections"] = st
+        if ctx.strict and len(a):
+            # separation may nudge a piece slightly out of Omega: project once more, drop pieces that
+            # cannot fit, and re-resolve if the projection created a new contact
+            a, valid = ctx.constraints.project_inside(a)
+            if not bool(valid.all()):
+                self.info["removed_outside_hull"] = self.info.get("removed_outside_hull", 0) + int((~valid).sum())
+                a = a[valid]
+            if ctx.constraints.hard_collisions and len(a) > 1 and ctx.constraints.conflicts(a)[0].shape[0]:
+                a, st2 = resolve_intersections(ctx, a, 1)
+                self.info["intersections_after_projection"] = st2
         self.best_assembly = a
         self.best_loss = self.quick_eval(a)["loss"]
         self.phase = "final"

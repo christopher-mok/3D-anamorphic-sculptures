@@ -27,6 +27,9 @@ def _common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--output", default=None, help="output folder (default: outputs/run_XXX)")
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--resume", action="store_true", help="resume from checkpoints in --output")
+    p.add_argument("--init", default=None, help="lock-and-rerun: start from this result.json / assembly JSON")
+    p.add_argument("--lock", default=None, help='indices to lock ("0,3,7"), "all", or omit to use the file\'s locked flags')
+    p.add_argument("--discard-unlocked", action="store_true", help="keep only the locked pieces of --init")
     p.add_argument("-v", "--verbose", action="store_true")
 
 
@@ -53,6 +56,7 @@ def main(argv=None) -> int:
     p_demo = sub.add_parser("make-demo", help="write demo meshes and targets into assets/")
     p_demo.add_argument("--root", default="assets")
     p_demo.add_argument("--complex", action="store_true", help="also write a ~1M-triangle stress-test pool to <root>/models_complex")
+    p_demo.add_argument("--sized", action="store_true", help="also write a mixed native-size pool to <root>/models_sized")
     args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.DEBUG if getattr(args, "verbose", False) else logging.INFO,
@@ -67,6 +71,10 @@ def main(argv=None) -> int:
             from .demo import make_complex_models
 
             make_complex_models(Path(args.root) / "models_complex")
+        if args.sized:
+            from .demo import make_sized_models
+
+            make_sized_models(Path(args.root) / "models_sized")
         print(f"demo assets written to {args.root}/models and {args.root}/targets")
         return 0
 
@@ -83,7 +91,12 @@ def main(argv=None) -> int:
         return 0
 
     methods = [args.method] if args.cmd == "run" else [m.strip() for m in args.methods.split(",") if m.strip()]
-    res = run_experiment(cfg, args.models, args.target, methods, output_dir=args.output, cameras=cams, resume=args.resume)
+    initial = None
+    if getattr(args, "init", None):
+        lock = None if args.lock is None else ("all" if args.lock == "all" else [int(x) for x in args.lock.split(",") if x.strip()])
+        initial = {"assembly": args.init, "locked": lock, "keep_unlocked": not args.discard_unlocked}
+    res = run_experiment(cfg, args.models, args.target, methods, output_dir=args.output, cameras=cams, resume=args.resume,
+                         initial=initial)
     comp = res["comparison"]
     print(f"\nresults in {res['output_dir']}")
     hdr = f"{'method':<20}{'status':<11}{'minIoU':>8}{'meanIoU':>9}{'spill':>8}{'coll':>6}{'cviol':>6}{'rand':>6}{'objs':>6}{'time':>8}"

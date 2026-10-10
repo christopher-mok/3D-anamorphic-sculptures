@@ -111,12 +111,17 @@ def run_experiment(
     on_preprocessed: Callable[[ProblemContext, dict, Path], None] | None = None,
     on_method_done: Callable[[str, dict], None] | None = None,
     on_method_start: Callable[[str, Path], None] | None = None,
+    initial: dict | None = None,
 ) -> dict:
     out = Path(output_dir) if output_dir else new_run_dir(cfg.output_root)
     out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     if ctx is None:
         ctx = build_context(cfg, models_dir, target_paths, cameras)
+    if initial is not None:
+        from ..context import load_initial_assembly
+
+        ctx.initial_assembly = load_initial_assembly(ctx, **initial)
     diag = ctx.save_preprocessing(out / "preprocessing")
     if on_preprocessed:
         on_preprocessed(ctx, diag, out)

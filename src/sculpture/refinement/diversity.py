@@ -39,6 +39,7 @@ def replace_row(a: Assembly, i: int, new: Assembly) -> Assembly:
         torch.cat([a.translation[:i], new.translation, a.translation[i + 1 :]]),
         torch.cat([a.rot6d[:i], new.rot6d, a.rot6d[i + 1 :]]),
         torch.cat([a.log_scale[:i], new.log_scale, a.log_scale[i + 1 :]]),
+        torch.cat([a.locked[:i], new.locked, a.locked[i + 1 :]]),
     )
 
 
@@ -85,7 +86,8 @@ def rebalance_types(ctx, a: Assembly, deadline_s: float | None = None) -> tuple[
             break
         contrib = marginal_contributions(ctx, a, res)
         # weakest pieces of the most over-represented types not tried yet
-        cand_objs = [i for i in torch.argsort(contrib).tolist() if int(a.mesh_ids[i]) in over[:2] and i not in tried_objects]
+        cand_objs = [i for i in torch.argsort(contrib).tolist()
+                     if int(a.mesh_ids[i]) in over[:2] and i not in tried_objects and not bool(a.locked[i])]
         if not cand_objs:
             break
         i = cand_objs[0]

@@ -20,7 +20,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as F
 
-from ..camera.projection import project_points, ray_box_intersection
+from ..camera.projection import pixel_rays, project_points, ray_box_intersection
 from ..geometry.rotation import matrix_to_rot6d, random_rotations
 from ..scene.assembly import Assembly
 from .residual import inscribed_radius_map
@@ -63,7 +63,61 @@ class CandidateGenerator:
         row = (uv_norm[..., 1] * H).long().clamp(0, H - 1)
         return torch.stack([maps[v][row[v], col[v]] for v in range(V)])
 
+    def sample_ray_meet(self, n: int, U: torch.Tensor, gen: torch.Generator, steps: int = 48) -> torch.Tensor | None:
+        """Points where UNCOVERED rays of different views meet in 3D: pick an uncovered pixel of a
+        random view (weighted by U), march its camera ray through Omega, and choose a depth whose
+        projections into the OTHER views also land on uncovered target (weighted by their U)."""
+        ctx = self.ctx
+        V, h, w = U.shape
+        if V < 2 or n <= 0:
+            return None
+        out = []
+        view = torch.randint(0, V, (n,), device=self.device, generator=gen)
+        for v, cam in enumerate(ctx.cameras):
+            sel = (view == v).nonzero(as_tuple=True)[0]
+            k = len(sel)
+            if k == 0:
+                continue
+            flat = U[v].reshape(-1).clamp_min(0)
+            if float(flat.sum()) <= 0:
+                continue
+            pix = torch.multinomial(flat, k, replacement=True, generator=gen)
+            rows = (pix // w).float() + torch.rand(k, device=self.device, generator=gen) - 0.5
+            cols = (pix % w).float() + torch.rand(k, device=self.device, generator=gen) - 0.5
+            o, d = pixel_rays(cam, (h, w), self.device, rows, cols)
+            tn, tf, hit = ray_box_intersection(o, d, self.bmin, self.bmax)
+            frac = (torch.arange(steps, device=self.device).float() + torch.rand(k, steps, device=self.device, generator=gen)) / steps
+            ts = tn[:, None] + (tf - tn).clamp_min(0)[:, None] * frac
+            pts = o[:, None, :] + ts[..., None] * d[:, None, :]                       # [k, S, 3]
+            inside = ctx.hull.query_occupancy(pts, strict=ctx.strict) & hit[:, None]
+            wgt = torch.ones(k, steps, device=self.device)
+            for u_, cam_u in enumerate(ctx.cameras):
+                if u_ == v:
+                    continue
+                uv, _, front = project_points(pts, cam_u, (h, w))
+                c = uv[..., 0].round().long().clamp(0, w - 1)
+                r = uv[..., 1].round().long().clamp(0, h - 1)
+                wgt = wgt * U[u_][r, c].clamp_min(0) * front
+            wgt = wgt * inside + 1e-6 * inside
+            ok = wgt.sum(1) > 0
+            if not bool(ok.any()):
+                continue
+            pick = torch.multinomial(wgt[ok], 1, generator=gen)[:, 0]
+            out.append(pts[ok][torch.arange(int(ok.sum()), device=self.device), pick])
+        if not out:
+            return None
+        return torch.cat(out)
+
     def sample_positions(self, n: int, U: torch.Tensor, gen: torch.Generator, explore_p: float) -> torch.Tensor:
+        frac_rm = float(self.ctx.cfg.get("proposals", {}).get("ray_meet_fraction", 0.0))
+        n_rm = int(round(frac_rm * n * (1 - explore_p)))
+        rm = self.sample_ray_meet(n_rm, U, gen) if n_rm > 0 else None
+        if rm is not None and len(rm):
+            rest = self._sample_voxel_positions(n - len(rm), U, gen, explore_p) if n > len(rm) else rm[:0]
+            return torch.cat([rm, rest])[:n]
+        return self._sample_voxel_positions(n, U, gen, explore_p)
+
+    def _sample_voxel_positions(self, n: int, U: torch.Tensor, gen: torch.Generator, explore_p: float) -> torch.Tensor:
         u = self._pixel_lookup(U, self.uv).clamp_min(0)  # [V,P]
         w = u.mean(0) + 2.0 * u.prod(0) + 1e-4
         idx = torch.multinomial(w, n, replacement=True, generator=gen)
@@ -154,9 +208,12 @@ class CandidateGenerator:
         row = uv_px[:, 1].round().long().clamp(0, h - 1)
         r_px = torch.maximum(rad_u[view, row, col], 0.5 * rad_t[view, row, col]).clamp_min(1.0)
         jitter = opts.scale_jitter[0] + (opts.scale_jitter[1] - opts.scale_jitter[0]) * torch.rand(n, device=self.device, generator=gen)
-        if ctx.constraints.scale_fixed:
-            # fixed size: the desired projected radius determines the DEPTH instead (z = f s / r)
-            s = torch.full((n,), float(ctx.cfg.scale.fixed), device=self.device)
+        cons = ctx.constraints
+        if cons.scale_fixed:
+            # size is not a parameter: the desired projected radius determines the DEPTH (z = f s / r).
+            # Provisional size = median model size (exact for uniform "fixed" mode); in "native" mode
+            # the depth is corrected once the model is chosen (below).
+            s = torch.full((n,), float(torch.exp(cons.fixed_log_scales.median())), device=self.device)
             z_des = f * s / (r_px * jitter)
             pos, z = self._slide_to_depth(pos, view, z, z_des)
         else:
@@ -166,7 +223,11 @@ class CandidateGenerator:
 
         # mesh + orientation
         M = len(ctx.library)
-        mesh = torch.randint(0, M, (n,), device=self.device, generator=gen)
+        if opts.allowed_meshes is not None:
+            allowed = opts.allowed_meshes.nonzero(as_tuple=True)[0]
+            mesh = allowed[torch.randint(0, len(allowed), (n,), device=self.device, generator=gen)]
+        else:
+            mesh = torch.randint(0, M, (n,), device=self.device, generator=gen)
         R = random_rotations(n, gen, device=self.device)
         use_bank = torch.rand(n, device=self.device, generator=gen) < opts.bank_probability
         if use_bank.any():
@@ -184,7 +245,7 @@ class CandidateGenerator:
                 sv = (view[bi] == v).nonzero(as_tuple=True)[0]
                 if len(sv):
                     R[bi[sv]] = bank.world_rotation(r_idx[sv], cam)
-        elif opts.allowed_meshes is not None:
-            allowed = opts.allowed_meshes.nonzero(as_tuple=True)[0]
-            mesh = allowed[torch.randint(0, len(allowed), (n,), device=self.device, generator=gen)]
+        if cons.scale_fixed and cons.scale_mode == "native":
+            s = torch.exp(cons.fixed_log_scales[mesh])
+            pos, z = self._slide_to_depth(pos, view, z, f * s / (r_px * jitter))
         return Assembly(mesh, pos, matrix_to_rot6d(R), torch.log(s))

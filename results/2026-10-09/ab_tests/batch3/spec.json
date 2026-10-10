@@ -1,0 +1,8 @@
+{
+  "preset": "fast",
+  "seeds": [0, 1, 2],
+  "arms": {
+    "cg_base":        {"method": "column_generation", "baseline": true},
+    "cg_multistart3": {"method": "column_generation", "set": ["multistart.starts=3"], "vs": "cg_base"}
+  }
+}

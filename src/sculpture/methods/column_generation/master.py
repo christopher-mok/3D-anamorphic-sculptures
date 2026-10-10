@@ -53,6 +53,7 @@ class ColumnPool:
         self.rows: list[np.ndarray] = []   # flat pixel indices covered by each column
         self.source: list[str] = []
         self._hashes: set[str] = set()
+        self.locked_cols: set[int] = set()  # columns of user-locked pieces (always fixed at x = 1)
         fg = ctx.targets.mask(self.res).reshape(-1).cpu().numpy() > 0.5
         self.fg = fg
 
@@ -106,7 +107,8 @@ class ColumnPool:
 
     def assembly(self, idx) -> Assembly:
         idx = torch.as_tensor(np.asarray(idx, dtype=np.int64))
-        a = Assembly(self.mesh_ids[idx], self.translation[idx], self.rot6d[idx], self.log_scale[idx])
+        locked = torch.tensor([int(i) in self.locked_cols for i in idx.tolist()], dtype=torch.bool)
+        a = Assembly(self.mesh_ids[idx], self.translation[idx], self.rot6d[idx], self.log_scale[idx], locked)
         return a.to(self.ctx.device)
 
     def incidence(self) -> sp.csr_matrix:

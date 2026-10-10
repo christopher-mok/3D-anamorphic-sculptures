@@ -49,3 +49,6 @@ sdf_ray:
   iterations: 300
   reseed_every: 75
   polish_steps: 100
+
+chained:
+  max_runtime_s: 60

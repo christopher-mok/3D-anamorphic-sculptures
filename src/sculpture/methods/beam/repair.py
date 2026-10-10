@@ -42,6 +42,7 @@ def replace_row(a: Assembly, i: int, new: Assembly) -> Assembly:
         torch.cat([a.translation[:i], new.translation, a.translation[i + 1 :]]),
         torch.cat([a.rot6d[:i], new.rot6d, a.rot6d[i + 1 :]]),
         torch.cat([a.log_scale[:i], new.log_scale, a.log_scale[i + 1 :]]),
+        torch.cat([a.locked[:i], new.locked, a.locked[i + 1 :]]),
     )
 
 
@@ -70,6 +71,7 @@ def repair_assembly(ctx, assembly: Assembly, cfg, gen: torch.Generator, res: int
     contrib = marginal_contributions(ctx, assembly, res)
     med = contrib.median().item()
     order = torch.argsort(contrib).tolist()
+    order = [i for i in order if not bool(assembly.locked[i])]
     weak = [i for i in order[: int(cfg.repair_max_objects)] if contrib[i].item() < max(1e-6, 0.25 * med)]
     to_delete = []
     I_c = ctx.targets.soft(cand_res)

@@ -119,13 +119,14 @@ class JobReporter(ProgressReporter):
 
 
 def _jsonable(d):
+    """Keep JSON-serializable values (incl. nested lists / dicts such as chained stages) as is;
+    stringify anything else."""
     out = {}
     for k, v in (d or {}).items():
-        if isinstance(v, (int, float, str, bool)) or v is None:
+        try:
+            json.dumps(v)
             out[k] = v
-        elif isinstance(v, (list, tuple)):
-            out[k] = [x if isinstance(x, (int, float, str, bool)) else str(x) for x in v]
-        else:
+        except (TypeError, ValueError):
             out[k] = str(v)
     return out
 
@@ -288,13 +289,17 @@ class JobManager:
 
         library, renderer = self.library_provider(models_dir, cfg.meshes)
         ctx = build_context(cfg, models_dir, targets, cams, library=library, renderer=renderer)
+        if req.initial is not None and req.initial.assembly.get("objects"):
+            from ..context import load_initial_assembly
+
+            ctx.initial_assembly = load_initial_assembly(ctx, req.initial.assembly, req.initial.locked, req.initial.keep_unlocked)
         reporter = JobReporter(job)
 
         def on_pre(ctx_, diag, out):
             pre = out / "preprocessing"
             with job.lock:
                 job.preprocessing = {
-                    "target_urls": [output_url(pre / f"target_{i}.png") for i in range(ctx_.num_views)],
+                    "target_urls": [output_url(pre / f"target_{i}.png") for i in range(ctx_.num_primary_views or ctx_.num_views)],
                     "cameras": diag["cameras"],
                     "bounding_volume": diag["bounding_volume"],
                     "hull_url": output_url(pre / "hull_preview.obj"),
@@ -326,7 +331,8 @@ class JobManager:
                     pr["runtime_s"] = m["runtime_s"]
                     pr["best_metric"] = m["min_view_iou"]
                     pr["result_dir_url"] = output_url(job.output_dir / name)
-                    pr["preview_urls"] = [output_url(job.output_dir / name / "renders" / f"view_{v}.png") for v in range(ctx.num_views)]
+                    pr["preview_urls"] = [output_url(job.output_dir / name / "renders" / f"view_{v}.png")
+                                          for v in range(ctx.num_primary_views or ctx.num_views)]
                     pr["assembly"] = assembly_to_dict(res["result"].assembly, ctx.library)
                     pr["info"] = _jsonable(res.get("info", {}))
                     pr["phase"] = "done"

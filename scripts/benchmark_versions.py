@@ -39,6 +39,7 @@ def main():
     ap.add_argument("--fast-seeds", type=int, nargs="*", default=[0, 1, 2])
     ap.add_argument("--medium-seeds", type=int, nargs="*", default=[0])
     ap.add_argument("--methods", default="beam,column_generation,sdf_ray")
+    ap.add_argument("--baseline-methods", default=None, help="methods for the baseline (default: --methods)")
     ap.add_argument("--set", action="append", default=[], help="dotted override applied to the IMPROVED version only")
     args = ap.parse_args()
     out = Path(args.out).resolve()
@@ -51,7 +52,8 @@ def main():
         for vname, vroot in versions.items():
             if (vname, preset, seed) in done:
                 continue
-            comp = run(vroot, preset, seed, out / f"{vname}_{preset}_s{seed}", args.methods, args.set if vname == "improved" else ())
+            methods = args.methods if vname == "improved" else (args.baseline_methods or args.methods)
+            comp = run(vroot, preset, seed, out / f"{vname}_{preset}_s{seed}", methods, args.set if vname == "improved" else ())
             for row in comp["rows"]:
                 results.append({"version": vname, "preset": preset, "seed": seed, **{k: row.get(k) for k in ["method", *METRICS]}})
             (out / "benchmark.json").write_text(json.dumps(results, indent=2))
@@ -71,8 +73,8 @@ def main():
                 sd = st.stdev(iou) if len(iou) > 1 else 0.0
                 lines.append(f"| {preset} | {method} | {vname} | {len(rows)} | {st.mean(iou):.3f} ± {sd:.3f} | {m('mean_iou'):.3f} | "
                              f"{m('spill'):.4f} | {m('collisions'):.1f} | {m('containment_violations'):.1f} | {m('object_count'):.0f} | {m('runtime_s'):.0f} |")
-    (out / "benchmark.md").write_text("\n".join(lines) + "\n")
-    print("\n".join(lines))
+    (out / "benchmark.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    sys.stdout.buffer.write(("\n".join(lines) + "\n").encode("utf-8"))
 
 
 if __name__ == "__main__":

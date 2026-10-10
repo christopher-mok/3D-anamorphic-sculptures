@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-MethodName = Literal["beam", "column_generation", "sdf_ray"]
+MethodName = Literal["beam", "column_generation", "sdf_ray", "chained"]
 
 
 class CameraModel(BaseModel):
@@ -18,6 +18,15 @@ class CameraModel(BaseModel):
     far: float = 20.0
 
 
+class InitialAssembly(BaseModel):
+    """Lock-and-rerun: an edited assembly, the indices that must stay fixed, and whether the
+    unlocked pieces are kept as a warm start (True) or discarded (False)."""
+
+    assembly: dict[str, Any]
+    locked: list[int] = Field(default_factory=list)
+    keep_unlocked: bool = True
+
+
 class JobRequest(BaseModel):
     models_dir: str = "assets/models"
     targets: list[str]
@@ -25,3 +34,4 @@ class JobRequest(BaseModel):
     methods: list[MethodName] = Field(default_factory=lambda: ["beam", "column_generation", "sdf_ray"])
     preset: Literal["fast", "default", "high_quality"] = "default"
     overrides: dict[str, Any] | None = None
+    initial: InitialAssembly | None = None

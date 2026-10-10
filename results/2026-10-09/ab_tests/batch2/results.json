@@ -1,0 +1,344 @@
+{
+  "beam_base": {
+    "0": {
+      "min_view_iou": 0.9038528800010681,
+      "mean_iou": 0.9170893430709839,
+      "collisions": 0,
+      "objects": 119,
+      "runtime_s": 62.89434313774109,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7601220011711121,
+      "randomness": 0.8993061780929565,
+      "final_conflicts": 3,
+      "removed": 0
+    },
+    "1": {
+      "min_view_iou": 0.8974764943122864,
+      "mean_iou": 0.9131921529769897,
+      "collisions": 0,
+      "objects": 99,
+      "runtime_s": 67.19201254844666,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7585811614990234,
+      "randomness": 0.8802233338356018,
+      "final_conflicts": 2,
+      "removed": 0
+    },
+    "2": {
+      "min_view_iou": 0.8897826671600342,
+      "mean_iou": 0.9060094952583313,
+      "collisions": 0,
+      "objects": 108,
+      "runtime_s": 63.47352719306946,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7594510912895203,
+      "randomness": 0.9217238426208496,
+      "final_conflicts": 5,
+      "removed": 0
+    }
+  },
+  "beam_multistart3": {
+    "0": {
+      "min_view_iou": 0.8736259341239929,
+      "mean_iou": 0.8956383466720581,
+      "collisions": 0,
+      "objects": 72,
+      "runtime_s": 62.46077036857605,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7546488046646118,
+      "randomness": 0.827440083026886,
+      "final_conflicts": 0,
+      "removed": 0
+    },
+    "1": {
+      "min_view_iou": 0.884512722492218,
+      "mean_iou": 0.9033565521240234,
+      "collisions": 0,
+      "objects": 84,
+      "runtime_s": 67.24696493148804,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7454311847686768,
+      "randomness": 0.8178509473800659,
+      "final_conflicts": 1,
+      "removed": 0
+    },
+    "2": {
+      "min_view_iou": 0.8975589275360107,
+      "mean_iou": 0.9145808219909668,
+      "collisions": 0,
+      "objects": 91,
+      "runtime_s": 70.25011968612671,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7496600151062012,
+      "randomness": 0.8893323540687561,
+      "final_conflicts": 5,
+      "removed": 0
+    }
+  },
+  "chained": {
+    "0": {
+      "min_view_iou": 0.9151533842086792,
+      "mean_iou": 0.9276297688484192,
+      "collisions": 0,
+      "objects": 95,
+      "runtime_s": 66.89380407333374,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.8015446066856384,
+      "randomness": 0.808457612991333,
+      "final_conflicts": 11,
+      "removed": 0
+    },
+    "1": {
+      "min_view_iou": 0.897977352142334,
+      "mean_iou": 0.9221632480621338,
+      "collisions": 0,
+      "objects": 100,
+      "runtime_s": 63.87931299209595,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.775530219078064,
+      "randomness": 0.7790183424949646,
+      "final_conflicts": 10,
+      "removed": 0
+    },
+    "2": {
+      "min_view_iou": 0.9036396145820618,
+      "mean_iou": 0.9217226505279541,
+      "collisions": 0,
+      "objects": 115,
+      "runtime_s": 67.00275468826294,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7760283350944519,
+      "randomness": 0.8497676849365234,
+      "final_conflicts": 13,
+      "removed": 1
+    }
+  },
+  "sdf_base": {
+    "0": {
+      "min_view_iou": 0.9054441452026367,
+      "mean_iou": 0.9265347719192505,
+      "collisions": 0,
+      "objects": 101,
+      "runtime_s": 41.87391138076782,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7820854783058167,
+      "randomness": 0.767443060874939,
+      "final_conflicts": 0,
+      "removed": 0
+    },
+    "1": {
+      "min_view_iou": 0.9141486287117004,
+      "mean_iou": 0.9292964935302734,
+      "collisions": 0,
+      "objects": 108,
+      "runtime_s": 44.04660987854004,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7853154540061951,
+      "randomness": 0.7571591734886169,
+      "final_conflicts": 2,
+      "removed": 0
+    },
+    "2": {
+      "min_view_iou": 0.8922630548477173,
+      "mean_iou": 0.9187185764312744,
+      "collisions": 0,
+      "objects": 97,
+      "runtime_s": 43.97926735877991,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7983126640319824,
+      "randomness": 0.759112536907196,
+      "final_conflicts": 1,
+      "removed": 0
+    }
+  },
+  "sdf_multistart3": {
+    "0": {
+      "min_view_iou": 0.8992376923561096,
+      "mean_iou": 0.920472264289856,
+      "collisions": 0,
+      "objects": 72,
+      "runtime_s": 42.91730523109436,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7891947627067566,
+      "randomness": 0.722341001033783,
+      "final_conflicts": 1,
+      "removed": 0
+    },
+    "1": {
+      "min_view_iou": 0.8870012760162354,
+      "mean_iou": 0.9172383546829224,
+      "collisions": 0,
+      "objects": 70,
+      "runtime_s": 41.86480259895325,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7876849174499512,
+      "randomness": 0.8039983510971069,
+      "final_conflicts": 4,
+      "removed": 0
+    },
+    "2": {
+      "min_view_iou": 0.8861678838729858,
+      "mean_iou": 0.903173565864563,
+      "collisions": 0,
+      "objects": 72,
+      "runtime_s": 33.29434871673584,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7836763262748718,
+      "randomness": 0.6877140402793884,
+      "final_conflicts": 0,
+      "removed": 0
+    }
+  },
+  "beam_native": {
+    "0": {
+      "min_view_iou": 0.7720275521278381,
+      "mean_iou": 0.8395751714706421,
+      "collisions": 0,
+      "objects": 110,
+      "runtime_s": 63.82229232788086,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.730553150177002,
+      "randomness": 0.7350603342056274,
+      "final_conflicts": 1,
+      "removed": 0
+    },
+    "1": {
+      "min_view_iou": 0.7512586116790771,
+      "mean_iou": 0.8134852647781372,
+      "collisions": 0,
+      "objects": 97,
+      "runtime_s": 64.76460766792297,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7423741817474365,
+      "randomness": 0.7114232182502747,
+      "final_conflicts": 3,
+      "removed": 1
+    },
+    "2": {
+      "min_view_iou": 0.6686033010482788,
+      "mean_iou": 0.779168963432312,
+      "collisions": 0,
+      "objects": 88,
+      "runtime_s": 65.04738855361938,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.6967180371284485,
+      "randomness": 0.6773135662078857,
+      "final_conflicts": 5,
+      "removed": 2
+    }
+  },
+  "beam_native_c2f": {
+    "0": {
+      "min_view_iou": 0.6317073106765747,
+      "mean_iou": 0.7199438810348511,
+      "collisions": 0,
+      "objects": 84,
+      "runtime_s": 65.21081328392029,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.6592914462089539,
+      "randomness": 0.78450608253479,
+      "final_conflicts": 1,
+      "removed": 1
+    },
+    "1": {
+      "min_view_iou": 0.7049936056137085,
+      "mean_iou": 0.7062724828720093,
+      "collisions": 0,
+      "objects": 74,
+      "runtime_s": 66.73830771446228,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.6883600950241089,
+      "randomness": 0.7954258322715759,
+      "final_conflicts": 5,
+      "removed": 1
+    },
+    "2": {
+      "min_view_iou": 0.6984170079231262,
+      "mean_iou": 0.7011465430259705,
+      "collisions": 0,
+      "objects": 81,
+      "runtime_s": 66.78964376449585,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.6996471285820007,
+      "randomness": 0.7479410767555237,
+      "final_conflicts": 3,
+      "removed": 1
+    }
+  },
+  "sdf_native": {
+    "0": {
+      "min_view_iou": 0.8547868728637695,
+      "mean_iou": 0.8942242860794067,
+      "collisions": 0,
+      "objects": 65,
+      "runtime_s": 45.132861375808716,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7651801109313965,
+      "randomness": 0.7062237858772278,
+      "final_conflicts": 1,
+      "removed": 0
+    },
+    "1": {
+      "min_view_iou": 0.6769058108329773,
+      "mean_iou": 0.7738137245178223,
+      "collisions": 0,
+      "objects": 61,
+      "runtime_s": 41.037704944610596,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.6964027881622314,
+      "randomness": 0.6155189871788025,
+      "final_conflicts": 2,
+      "removed": 2
+    },
+    "2": {
+      "min_view_iou": 0.8162885904312134,
+      "mean_iou": 0.8688903450965881,
+      "collisions": 0,
+      "objects": 53,
+      "runtime_s": 41.95649170875549,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.757747232913971,
+      "randomness": 0.5981327891349792,
+      "final_conflicts": 4,
+      "removed": 0
+    }
+  },
+  "sdf_native_c2f": {
+    "0": {
+      "min_view_iou": 0.623721718788147,
+      "mean_iou": 0.7013998031616211,
+      "collisions": 0,
+      "objects": 60,
+      "runtime_s": 41.188095808029175,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7013892531394958,
+      "randomness": 0.7580997943878174,
+      "final_conflicts": 3,
+      "removed": 2
+    },
+    "1": {
+      "min_view_iou": 0.6867110729217529,
+      "mean_iou": 0.762679398059845,
+      "collisions": 0,
+      "objects": 69,
+      "runtime_s": 44.34385800361633,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.707301676273346,
+      "randomness": 0.6863208413124084,
+      "final_conflicts": 3,
+      "removed": 2
+    },
+    "2": {
+      "min_view_iou": 0.6971304416656494,
+      "mean_iou": 0.7889207005500793,
+      "collisions": 0,
+      "objects": 69,
+      "runtime_s": 43.97549867630005,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.678813099861145,
+      "randomness": 0.7221267819404602,
+      "final_conflicts": 5,
+      "removed": 2
+    }
+  }
+}

@@ -38,6 +38,47 @@ def _round8(x: int) -> int:
     return max(8, int(round(x / 8)) * 8)
 
 
+def load_initial_assembly(ctx: "ProblemContext", assembly, locked=None, keep_unlocked: bool = True):
+    """Lock-and-rerun warm start. ``assembly``: path to a result/assembly JSON or an assembly dict.
+    ``locked``: indices to lock, "all", or None (keep the per-object "locked" flags of the file).
+    ``keep_unlocked=False`` keeps only the locked pieces."""
+    from .scene.serialization import assembly_from_dict
+
+    d = json.loads(Path(assembly).read_text()) if isinstance(assembly, (str, Path)) else assembly
+    if "assembly" in d:
+        d = d["assembly"]
+    a = assembly_from_dict(d, ctx.library, ctx.device)
+    if locked == "all":
+        a.locked[:] = True
+    elif locked is not None:
+        idx = torch.tensor([int(i) for i in locked if 0 <= int(i) < len(a)], dtype=torch.long, device=ctx.device)
+        a.locked[:] = False
+        if len(idx):
+            a.locked[idx] = True
+    if not keep_unlocked:
+        a = a[a.locked]
+    return a
+
+
+def viewing_zone_cameras(cams, zone_cfg) -> list[tuple[PerspectiveCamera, int]]:
+    """[(camera, primary view index)] on a circle of radius r around each camera position,
+    perpendicular to its viewing direction, looking at the same point."""
+    r = float(zone_cfg.get("radius", 0.0)) if zone_cfg else 0.0
+    n = int(zone_cfg.get("samples", 4)) if zone_cfg else 0
+    if r <= 0 or n <= 0:
+        return []
+    out = []
+    for v, cam in enumerate(cams):
+        Rwc = cam.rotation()
+        right, up = Rwc[0], Rwc[1]
+        for k in range(n):
+            th = 2 * math.pi * k / n
+            eye = cam.eye + r * (math.cos(th) * right + math.sin(th) * up)
+            out.append((PerspectiveCamera(position=tuple(eye), look_at=tuple(cam.look_at), up=tuple(cam.up),
+                                          fov_y_deg=cam.fov_y_deg, near=cam.near, far=cam.far), v))
+    return out
+
+
 def view_axis_volume(camera: PerspectiveCamera, bv) -> tuple[list[float], list[float]]:
     """Axis-aligned box of the camera frustum between distances view_axis_near and
     view_axis_far (the target cone is carved out of it later). Used when a single view
@@ -70,9 +111,14 @@ class ProblemContext:
     constraints: ConstraintEvaluator
     loss: MultiScaleSilhouetteLoss
     timings: dict = field(default_factory=dict)
+    num_primary_views: int = 0  # user cameras; views beyond these are viewing-zone samples
+    initial_assembly: object = None  # lock-and-rerun / chained warm start (Assembly with locked flags)
     _bank: object = None
     _generator: object = None
     _near_depth: float | None = None
+    _hull_points: object = None
+    _reveal: object = None
+    _voxel: object = None
     _coarse_err: float = 0.0
 
     @property
@@ -128,6 +174,25 @@ class ProblemContext:
         f = max(c.focal_px(resolution) for c in self.cameras)
         return "coarse" if self._coarse_err * s_max * f / self._near_depth <= tol else "proxy"
 
+    @property
+    def reveal(self):
+        """Off-axis "reveal" cameras (RevealTerm), built lazily; None if there are none."""
+        if self._reveal is None:
+            from .loss.reveal import RevealTerm
+
+            self._reveal = RevealTerm(self, self.cfg.get("reveal", {}))
+        return self._reveal if self._reveal.cameras else None
+
+    def hull_samples(self, n: int, gen: torch.Generator | None = None) -> torch.Tensor:
+        """n random points inside the visual hull (voxel centers + sub-voxel jitter)."""
+        if self._hull_points is None:
+            self._hull_points = self.hull.inside_centers(strict=self.strict, max_points=400_000)
+            self._voxel = torch.tensor(self.hull.voxel_size, dtype=torch.float32, device=self.device)
+        P = self._hull_points
+        idx = torch.randint(0, len(P), (n,), device=self.device, generator=gen)
+        jitter = (torch.rand(n, 3, device=self.device, generator=gen) - 0.5) * self._voxel
+        return P[idx] + jitter
+
     def render(self, assembly, resolution: int | None = None, lod: str = "auto") -> torch.Tensor:
         r = resolution or self.working_resolution
         if lod == "auto":
@@ -146,11 +211,13 @@ class ProblemContext:
     def save_preprocessing(self, folder) -> dict:
         folder = Path(folder)
         folder.mkdir(parents=True, exist_ok=True)
-        self.targets.save_pngs(folder, self.working_resolution)
+        self.targets.save_pngs(folder, self.working_resolution, n=self.num_primary_views or None)
         self.hull.save(folder / "hull.npz")
         faces = self.hull.export_preview_obj(folder / "hull_preview.obj")
+        V0 = self.num_primary_views or len(self.cameras)
         diag = {
-            "cameras": [c.to_dict() for c in self.cameras],
+            "cameras": [c.to_dict() for c in self.cameras[:V0]],
+            "viewing_zone_cameras": [c.to_dict() for c in self.cameras[V0:]],
             "bounding_volume": {"min": list(map(float, self.hull.bmin)), "max": list(map(float, self.hull.bmax))},
             "hull_mode": self.hull.mode,
             "hull_resolution": list(map(int, self.hull.resolution)),
@@ -206,6 +273,16 @@ def build_context(
     t0 = time.time()
     targets = TargetSet.from_files(target_paths, base_res, cfg.targets, device=device)
     timings["targets"] = time.time() - t0
+    n_primary = len(cams)
+    zone = viewing_zone_cameras(cams, cfg.get("viewing_zone", {}))
+    if zone:
+        # VIEWING ZONE: extra cameras on a circle around each user camera (perpendicular to its view
+        # direction, same look-at), all sharing that camera's target: the illusion must hold for
+        # every eye position in the zone. They are ordinary views for every downstream component.
+        cams = cams + [c for c, _ in zone]
+        base = targets.base.cpu().numpy()
+        targets = TargetSet([base[v] for v in range(n_primary)] + [base[v] for _, v in zone], device,
+                            list(targets.paths) + [targets.paths[v] for _, v in zone])
 
     isotropic = True
     if cfg.bounding_volume.get("unbounded_view_axis", False):
@@ -242,4 +319,4 @@ def build_context(
     timings["model_sdf"] = time.time() - t0
 
     loss = MultiScaleSilhouetteLoss.from_config(targets, cfg.loss, max_resolution=cfg.targets.working_resolution)
-    return ProblemContext(cfg, device, library, renderer, targets, cams, hull, compat, intervals, constraints, loss, timings)
+    return ProblemContext(cfg, device, library, renderer, targets, cams, hull, compat, intervals, constraints, loss, timings, n_primary)

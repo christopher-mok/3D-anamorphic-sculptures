@@ -2,7 +2,7 @@
 import { Suspense, useRef, type ReactNode } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import type { Assembly, BoundingVolume as BV, Camera, Vec3 } from "../api/types";
+import type { Assembly, BoundingVolume as BV, Camera, ObjectInstance, Vec3 } from "../api/types";
 import { ErrorBoundary } from "../utils/ErrorBoundary";
 import { useElementSize } from "../utils/hooks";
 import { AssemblyMeshes } from "./AssemblyMeshes";
@@ -10,6 +10,7 @@ import { BoundingVolume } from "./BoundingVolume";
 import { BoxBoundsGizmo, ViewAxisBounds } from "./BoundsGizmo";
 import { CameraFrustum } from "./CameraFrustum";
 import { HullMesh, type HullStyle } from "./HullMesh";
+import { PieceGizmo, type GizmoMode } from "./PieceGizmo";
 import { cameraColor } from "./math";
 import { TargetOverlay, type OverlayBlend } from "./TargetOverlay";
 import { FREE_CAMERA, ViewerCameraController } from "./ViewerCameraController";
@@ -32,6 +33,21 @@ export interface SceneData {
   meshUrlFor: (name: string) => string;
   /** Cameras can be selected / dragged (setup mode). */
   editable: boolean;
+  /** viewing_zone.radius: ring around each camera (0 = none). */
+  zoneRadius: number;
+}
+
+/** Results-mode assembly editing (picking, selection highlight, move / rotate gizmo). */
+export interface ViewerEditing {
+  selected: ReadonlySet<number>;
+  /** Picking enabled (disabled e.g. in Target View). */
+  pickable: boolean;
+  onPick: (index: number, additive: boolean) => void;
+  /** Click on empty space. */
+  onClear: () => void;
+  /** Piece the gizmo is attached to (null = no gizmo). */
+  gizmo: { index: number; object: ObjectInstance; mode: GizmoMode } | null;
+  onTransform: (index: number, next: ObjectInstance) => void;
 }
 
 export interface ViewerSettings {
@@ -75,11 +91,17 @@ interface SculptureViewerProps {
   onViewAxisChange?: (near: number, far: number) => void;
   /** Extra DOM content drawn on top (status text etc.). */
   hud?: ReactNode;
+  /** Assembly editing (Results mode). */
+  editing?: ViewerEditing | null;
+  /** Floating DOM panel in the top-right corner of the viewer. */
+  sidePanel?: ReactNode;
 }
 
 export function SculptureViewer({
   scene, settings, viewIndex, selectedCamera, onSelectCamera, onMoveCamera, onBoundsChange, onViewAxisChange, hud,
+  editing, sidePanel,
 }: SculptureViewerProps) {
+  const gizmoBusy = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const size = useElementSize(containerRef);
   const s = settings;
@@ -99,6 +121,10 @@ export function SculptureViewer({
         camera={{ position: [span * 3.5, span * 2.5, span * 4.5], ...FREE_CAMERA }}
         gl={{ antialias: true, preserveDrawingBuffer: true }}
         dpr={[1, 2]}
+        onPointerMissed={(e) => {
+          if (!editing?.pickable || gizmoBusy.current || e.button !== 0) return;
+          editing.onClear();
+        }}
       >
         <color attach="background" args={[s.silhouette ? "#ffffff" : "#14171c"]} />
         <hemisphereLight args={["#e8eeff", "#3b3530", 1.4]} />
@@ -144,6 +170,8 @@ export function SculptureViewer({
             selected={scene.editable && selectedCamera === i}
             onSelect={() => onSelectCamera(selectedCamera === i ? null : i)}
             onMove={(p) => onMoveCamera(i, p)}
+            zoneRadius={scene.zoneRadius}
+            showZone={i !== viewIndex}
           />
         ))}
 
@@ -161,6 +189,17 @@ export function SculptureViewer({
             meshUrlFor={scene.meshUrlFor}
             silhouette={s.silhouette}
             showBoxes={s.showBoxes}
+            selected={editing?.selected}
+            onPick={editing?.pickable ? editing.onPick : undefined}
+          />
+        )}
+        {editing?.pickable && editing.gizmo && (
+          <PieceGizmo
+            key={editing.gizmo.index}
+            object={editing.gizmo.object}
+            mode={editing.gizmo.mode}
+            busyRef={gizmoBusy}
+            onChange={(next) => editing.gizmo && editing.onTransform(editing.gizmo.index, next)}
           />
         )}
       </Canvas>
@@ -176,6 +215,7 @@ export function SculptureViewer({
         />
       )}
       {hud && <div className="viewer-hud">{hud}</div>}
+      {sidePanel && <div className="viewer-side">{sidePanel}</div>}
     </div>
   );
 }

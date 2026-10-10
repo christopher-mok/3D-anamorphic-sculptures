@@ -69,6 +69,7 @@ def resolve_intersections(ctx, a: Assembly, rounds: int = 6, steps: int = 30) ->
             break
         mask = torch.zeros(len(a), device=ctx.device)
         mask[pairs.flatten().unique()] = 1.0
+        mask[a.locked] = 0.0
         r = refine_assembly(ctx, a, steps, progress=(1.0, 1.0), trainable=mask, lr_scale=0.5,
                             collision_weight=cons.lambda_collision * 30.0)
         a = r.assembly
@@ -86,7 +87,10 @@ def resolve_intersections(ctx, a: Assembly, rounds: int = 6, steps: int = 30) ->
         for i, j in pairs.tolist():
             if i in handled or j in handled or i in remove or j in remove:
                 continue
-            victim = i if contrib[i] <= contrib[j] else j
+            li, lj = bool(a.locked[i]), bool(a.locked[j])
+            if li and lj:  # both locked by the user: leave as is (reported)
+                continue
+            victim = j if li else i if lj else (i if contrib[i] <= contrib[j] else j)
             handled.add(victim)
             obj, others = a[victim], a.without(victim)
             cands = _fix_candidates(ctx, obj)

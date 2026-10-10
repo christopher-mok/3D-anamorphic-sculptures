@@ -158,10 +158,26 @@ class ColumnGenerationOptimizer(OptimizationMethod):
             self._initial_columns(gen)
         log.info("[column_generation] %d initial columns", len(pool))
 
+        # warm start (lock-and-rerun / chained): user-locked pieces become columns fixed at x = 1;
+        # unlocked pieces are ordinary columns ("columns" mode) or, in "anchor" mode (chained
+        # stage), the whole incoming assembly is anchored and CG only fills the holes around it
+        init = self.initial_assembly()
+        anchor_start = False
+        if init is not None:
+            n0 = len(pool)
+            pool.add(init, "initial", dedupe=False)
+            pool.locked_cols = {n0 + k for k in range(len(init)) if bool(init.locked[k])}
+            master.fixed = set(pool.locked_cols)
+            anchor_start = str(cfg.get("init_mode", "columns")) == "anchor"
+            self.info["initial_pieces"] = len(init)
+            self.info["locked_pieces"] = len(pool.locked_cols)
+            if anchor_start:
+                self.consider_best(pool.assembly(list(range(n0, n0 + len(init)))))
+
         no_improve = 0
         rounds = 0
         n_anchor = int(cfg.get("anchor_rounds", 2))
-        while rounds < int(cfg.pricing_rounds):
+        while not anchor_start and rounds < int(cfg.pricing_rounds):
             # reserve time for the final LP (+ conflict rounds), the MILP and the anchored rounds
             reserve = (min(float(cfg.milp_time_limit_s), 0.4 * self.max_runtime) + min(float(cfg.lp_time_limit_s), 0.15 * self.max_runtime)
                        + n_anchor * float(cfg.get("anchor_time_fraction", 0.12)) * self.max_runtime + 5)
@@ -175,14 +191,14 @@ class ColumnGenerationOptimizer(OptimizationMethod):
                 break
         self.info["pricing_rounds"] = rounds
 
-        assembly = self._integer_assembly(solver, milp_share=float(cfg.get("milp_time_share", 0.25)))
+        assembly = self._integer_assembly(solver, milp_share=float(cfg.get("milp_time_share", 0.25))) if not anchor_start else self.best_assembly
         self.consider_best(assembly)
         self.log_iteration(assembly, force_report=True)
 
         # continuous polish with the shared raster loss (same objective as the other methods)
         self.phase = "raster_polish"
-        if len(assembly) and int(cfg.polish_steps) > 0:
-            r = refine_assembly(ctx, assembly, int(cfg.polish_steps), progress=(0.6, 1.0))
+        if not anchor_start and len(assembly) and int(cfg.polish_steps) > 0:
+            r = refine_assembly(ctx, assembly, int(cfg.polish_steps), progress=(0.6, 1.0), w_overlap=float(cfg.get("polish_overlap", 0.0)))
             assembly = r.assembly
             self.info["polish_initial_loss"] = r.initial_loss
             self.info["polish_final_loss"] = r.loss
@@ -287,6 +303,9 @@ class ColumnGenerationOptimizer(OptimizationMethod):
         n0 = len(pool)
         added = pool.add(incumbent, f"anchor{k}", dedupe=False)
         anchors = list(range(n0, n0 + added))
+        # the incumbent (which contains every locked piece) is re-added as anchors: the locked set
+        # moves to the new copies (keeping the old ones fixed too would duplicate locked pieces)
+        pool.locked_cols = {col for k_, col in enumerate(anchors) if k_ < len(incumbent) and bool(incumbent.locked[k_])}
         master.fixed = set(anchors)
         if ctx.constraints.hard_collisions:
             master.conflicts.update(find_conflicts(ctx, pool, np.array(anchors), master.conflicts, against=np.arange(len(pool))))
@@ -298,5 +317,6 @@ class ColumnGenerationOptimizer(OptimizationMethod):
         assembly = self._integer_assembly(solver, milp_share=float(cfg.get("milp_time_share", 0.25)))
         steps = int(cfg.get("anchor_polish_steps", max(20, int(cfg.polish_steps) // 2)))
         if len(assembly) > len(incumbent) and steps > 0:
-            assembly = refine_assembly(ctx, assembly, steps, progress=(0.8, 1.0), lr_scale=0.5).assembly
+            assembly = refine_assembly(ctx, assembly, steps, progress=(0.8, 1.0), lr_scale=0.5,
+                                       w_overlap=float(cfg.get("polish_overlap", 0.0))).assembly
         return assembly

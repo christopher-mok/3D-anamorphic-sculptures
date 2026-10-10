@@ -58,8 +58,8 @@ class TargetSet:
     """
 
     def __init__(self, masks: Sequence[np.ndarray], device="cuda", paths: Sequence[str] | None = None):
-        if not 1 <= len(masks) <= 2:
-            raise ValueError("one or two target images are supported")
+        if len(masks) < 1:
+            raise ValueError("at least one target image is required")
         self.device = torch.device(device)
         self.paths = list(paths) if paths else [None] * len(masks)
         self.base = torch.tensor(np.stack(masks), dtype=torch.float32, device=self.device)  # [V,S,S]
@@ -114,11 +114,11 @@ class TargetSet:
             self._cache[key] = gaussian_pyramid(self.mask(res), min_res)
         return self._cache[key]
 
-    def save_pngs(self, folder, res: int | None = None) -> list[Path]:
+    def save_pngs(self, folder, res: int | None = None, n: int | None = None) -> list[Path]:
         folder = Path(folder)
         folder.mkdir(parents=True, exist_ok=True)
         out = []
-        m = self.mask(res or self.base_resolution).cpu().numpy()
+        m = self.mask(res or self.base_resolution).cpu().numpy()[:n]
         for i, x in enumerate(m):
             p = folder / f"target_{i}.png"
             Image.fromarray(((1.0 - x) * 255).astype(np.uint8)).save(p)  # black silhouette on white

@@ -1,0 +1,78 @@
+{
+  "cg_base": {
+    "0": {
+      "min_view_iou": 0.8135128021240234,
+      "mean_iou": 0.8608594536781311,
+      "collisions": 0,
+      "objects": 119,
+      "runtime_s": 36.19148373603821,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.75083988904953,
+      "randomness": 0.5154744386672974,
+      "final_conflicts": 2,
+      "removed": 1
+    },
+    "1": {
+      "min_view_iou": 0.8517444133758545,
+      "mean_iou": 0.8902809619903564,
+      "collisions": 0,
+      "objects": 119,
+      "runtime_s": 40.6923770904541,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7459359169006348,
+      "randomness": 0.5887487530708313,
+      "final_conflicts": 2,
+      "removed": 1
+    },
+    "2": {
+      "min_view_iou": 0.8218717575073242,
+      "mean_iou": 0.8669044971466064,
+      "collisions": 0,
+      "objects": 120,
+      "runtime_s": 34.00975680351257,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7553926706314087,
+      "randomness": 0.45941510796546936,
+      "final_conflicts": 0,
+      "removed": 0
+    }
+  },
+  "cg_multistart3": {
+    "0": {
+      "min_view_iou": 0.8189128637313843,
+      "mean_iou": 0.8736079931259155,
+      "collisions": 0,
+      "objects": 120,
+      "runtime_s": 36.42737317085266,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7572569251060486,
+      "randomness": 0.4673446714878082,
+      "final_conflicts": 0,
+      "removed": 0
+    },
+    "1": {
+      "min_view_iou": 0.8363151550292969,
+      "mean_iou": 0.8798718452453613,
+      "collisions": 0,
+      "objects": 120,
+      "runtime_s": 42.32338619232178,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7494487166404724,
+      "randomness": 0.5632363557815552,
+      "final_conflicts": 1,
+      "removed": 0
+    },
+    "2": {
+      "min_view_iou": 0.8439205884933472,
+      "mean_iou": 0.8841127157211304,
+      "collisions": 0,
+      "objects": 120,
+      "runtime_s": 48.381972551345825,
+      "zone_min_iou": null,
+      "off_view_similarity": 0.7642616629600525,
+      "randomness": 0.4590810537338257,
+      "final_conflicts": 4,
+      "removed": 0
+    }
+  }
+}

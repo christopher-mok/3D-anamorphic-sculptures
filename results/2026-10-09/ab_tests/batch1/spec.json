@@ -1,0 +1,14 @@
+{
+  "preset": "fast",
+  "seeds": [0, 1, 2],
+  "arms": {
+    "beam_base":     {"method": "beam", "baseline": true},
+    "beam_overlap":  {"method": "beam", "set": ["refine.w_overlap=2"], "vs": "beam_base"},
+    "beam_milp_add": {"method": "beam", "set": ["beam.multi_add_solver=milp"], "vs": "beam_base"},
+    "beam_raymeet":  {"method": "beam", "set": ["proposals.ray_meet_fraction=0.5"], "vs": "beam_base"},
+    "cg_base":       {"method": "column_generation", "baseline": true},
+    "cg_overlap":    {"method": "column_generation", "set": ["refine.w_overlap=2"], "vs": "cg_base"},
+    "sdf_base":      {"method": "sdf_ray", "baseline": true},
+    "sdf_raymeet":   {"method": "sdf_ray", "set": ["proposals.ray_meet_fraction=0.5"], "vs": "sdf_base"}
+  }
+}

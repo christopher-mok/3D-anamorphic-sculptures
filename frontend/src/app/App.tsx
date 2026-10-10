@@ -3,25 +3,28 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, errorMessage, modelMeshUrl } from "../api/client";
 import { isTerminal, useJobStream } from "../api/ws";
 import type {
-  BoundingVolume, Camera, Defaults, Health, JobRequest, JobStatus, MethodName, ModelInfo, TargetInfo, Vec3,
+  BoundingVolume, Camera, Defaults, Health, JobRequest, JobStatus, MethodName, ModelInfo, ObjectInstance, TargetInfo, Vec3,
 } from "../api/types";
-import { ALL_METHODS, METHOD_SHORT } from "../api/types";
+import { ALL_METHODS, METHOD_LABELS, METHOD_SHORT } from "../api/types";
 import {
   BoundsPanel, boundsErrors, boundsFromDefaults, boundsOverrides, FALLBACK_BOUNDS, type BoundsSettings,
 } from "../components/BoundsPanel";
 import { CameraEditor } from "../components/CameraEditor";
+import { EditPanel, type GizmoChoice } from "../components/EditPanel";
 import { ComparisonTable } from "../components/ComparisonTable";
 import { JobControls } from "../components/JobControls";
 import {
-  DEFAULT_DESIGN_OPTIONS, deepMerge, designOverrides, MethodPanel, parseOverrides, type DesignOptions, type PresetChoice,
+  DEFAULT_DESIGN_OPTIONS, deepMerge, designOverrides, MethodPanel, parseOverrides, viewingZoneRadiusOf,
+  type DesignOptions, type PresetChoice,
 } from "../components/MethodPanel";
 import { ModelPanel } from "../components/ModelPanel";
 import { jobMethods, ProgressPanel } from "../components/ProgressPanel";
 import { TargetPanel, targetUrlFor } from "../components/TargetPanel";
 import { ViewerToolbar, type DisplayMethod, type SceneMode } from "../components/ViewerToolbar";
 import {
-  DEFAULT_VIEWER_SETTINGS, SculptureViewer, type SceneData, type ViewerSettings,
+  DEFAULT_VIEWER_SETTINGS, SculptureViewer, type SceneData, type ViewerEditing, type ViewerSettings,
 } from "../viewer/SculptureViewer";
+import { useAssemblyEdits } from "./useAssemblyEdits";
 import { useMethodAssembly } from "./useMethodAssembly";
 
 // Used until / unless GET /api/defaults answers (mirrors configs/default.yaml).
@@ -93,6 +96,14 @@ export function App() {
   const [viewIndex, setViewIndex] = useState<number | null>(null);
   const [selectedCamera, setSelectedCamera] = useState<number | null>(null);
   const [settings, setSettings] = useState<ViewerSettings>(DEFAULT_VIEWER_SETTINGS);
+
+  // ---- assembly editing (lock-and-rerun) ---------------------------------------------
+  const [selection, setSelection] = useState<number[]>([]);
+  const [gizmo, setGizmo] = useState<GizmoChoice>("off");
+  const [keepUnlocked, setKeepUnlocked] = useState(true);
+  const [applyCurrent, setApplyCurrent] = useState(true);
+  const [rerunning, setRerunning] = useState(false);
+  const [rerunError, setRerunError] = useState<string | null>(null);
 
   // ---- initial load ------------------------------------------------------------------
   const refreshTargets = useCallback(() => {
@@ -188,6 +199,13 @@ export function App() {
     if (id) openJob(id);
   }, [openJob]);
 
+  /** Config overrides from the current form. Later entries win: design options < bounds < Custom JSON. */
+  const currentOverrides = (singleView: boolean): Record<string, unknown> =>
+    deepMerge(
+      deepMerge(designOverrides(designOptions, singleView), boundsOverrides(bounds, designOptions.unboundedAxis && singleView)),
+      preset === "custom" && overrides?.value ? overrides.value : {},
+    );
+
   const start = async () => {
     if (startBlockers.length || !target1) return;
     const targetsReq = target2Enabled && target2 ? [target1, target2] : [target1];
@@ -198,12 +216,7 @@ export function App() {
       methods: ALL_METHODS.filter((m) => methods.includes(m)),
       preset: preset === "custom" ? "default" : preset,
     };
-    const singleView = targetsReq.length === 1;
-    // Later entries win: design options < bounds < Custom JSON.
-    const merged = deepMerge(
-      deepMerge(designOverrides(designOptions, singleView), boundsOverrides(bounds, designOptions.unboundedAxis && singleView)),
-      preset === "custom" && overrides?.value ? overrides.value : {},
-    );
+    const merged = currentOverrides(targetsReq.length === 1);
     if (Object.keys(merged).length) req.overrides = merged;
     setSubmitting(true);
     setRunError(null);
@@ -242,7 +255,61 @@ export function App() {
   const liveFallback = job ? jobMethods(job).find(methodAvailable) ?? null : null;
   const bestMethod = job?.comparison?.best_method ?? null;
   const resolvedMethod: MethodName | null = displayMethod === "best" ? bestMethod ?? liveFallback : displayMethod;
-  const assembly = useMethodAssembly(job, sceneMode === "results" ? resolvedMethod : null);
+  const baseAssembly = useMethodAssembly(job, sceneMode === "results" ? resolvedMethod : null);
+
+  // Local edits per (job, method); never sent anywhere except as `initial` of a rerun.
+  const editKey = sceneMode === "results" && job && resolvedMethod ? `${job.job_id}/${resolvedMethod}` : null;
+  const edits = useAssemblyEdits(editKey, baseAssembly);
+  const updateEdits = edits.update;
+  const assembly = edits.assembly;
+  const editObjects = useMemo(() => assembly?.objects ?? [], [assembly]);
+  const methodStatus = resolvedMethod ? job?.methods?.[resolvedMethod]?.status : undefined;
+  const canEdit = !!editKey && !!assembly && (methodStatus === "done" || methodStatus === "cancelled" || methodStatus === "failed");
+  const pickable = canEdit && viewIndex === null;
+
+  // Selection / gizmo belong to one (job, method).
+  useEffect(() => {
+    setSelection([]);
+    setGizmo("off");
+    setRerunError(null);
+  }, [editKey]);
+  const validSelection = useMemo(() => selection.filter((i) => i < editObjects.length), [selection, editObjects.length]);
+  const selectedSet = useMemo(() => new Set(validSelection), [validSelection]);
+
+  const pick = useCallback((index: number, additive: boolean) => {
+    setSelection((sel) => (additive ? (sel.includes(index) ? sel.filter((i) => i !== index) : [...sel, index]) : [index]));
+  }, []);
+  const clearSelection = useCallback(() => setSelection([]), []);
+  const setLocked = (indices: ReadonlySet<number> | null, locked: boolean) =>
+    updateEdits((objs) =>
+      objs.map((o, i) => ((indices === null || indices.has(i)) && !!o.locked !== locked ? { ...o, locked } : o)),
+    );
+  const deleteSelected = () => {
+    const del = new Set(validSelection);
+    updateEdits((objs) => objs.filter((_, i) => !del.has(i)));
+    setSelection([]);
+    setGizmo("off");
+  };
+  const transformPiece = useCallback(
+    (index: number, next: ObjectInstance) => updateEdits((objs) => objs.map((o, i) => (i === index && !o.locked ? next : o))),
+    [updateEdits],
+  );
+
+  const gizmoIndex = validSelection.length === 1 ? validSelection[0] : null;
+  const gizmoObject = gizmoIndex !== null ? editObjects[gizmoIndex] : undefined;
+  const editing: ViewerEditing | null = canEdit
+    ? {
+        selected: selectedSet,
+        pickable,
+        onPick: pick,
+        onClear: clearSelection,
+        gizmo:
+          gizmo !== "off" && gizmoIndex !== null && gizmoObject && !gizmoObject.locked
+            ? { index: gizmoIndex, object: gizmoObject, mode: gizmo }
+            : null,
+        onTransform: transformPiece,
+      }
+    : null;
 
   const jobTargetUrls = useMemo(() => {
     if (!job) return [];
@@ -273,6 +340,7 @@ export function App() {
         assembly,
         meshUrlFor,
         editable: false,
+        zoneRadius: viewingZoneRadiusOf(job.request?.overrides),
       };
     }
     return {
@@ -285,10 +353,11 @@ export function App() {
       assembly: null,
       meshUrlFor,
       editable: true,
+      zoneRadius: designOptions.viewingZoneRadius,
     };
   }, [
     sceneMode, job, jobTargetUrls, defaults, assembly, meshUrlFor, cameras, numSetupViews, setupTargetUrls,
-    setupVolume, viewAxisMode, bounds.viewAxisNear, bounds.viewAxisFar,
+    setupVolume, viewAxisMode, bounds.viewAxisNear, bounds.viewAxisFar, designOptions.viewingZoneRadius,
   ]);
 
   const numViews = scene.cameras.length;
@@ -314,6 +383,52 @@ export function App() {
     if (job) setSceneMode("results");
   };
 
+  // ---- lock-and-rerun -------------------------------------------------------------------
+  const jobReq = job?.request;
+  const rerunSingleView = (jobReq?.targets?.length ?? 1) === 1;
+  const lockedIndices = editObjects.flatMap((o, i) => (o.locked ? [i] : []));
+  const rerunBlockers: string[] = [];
+  if (!jobReq?.targets?.length || !jobReq.cameras?.length || !jobReq.methods?.length) {
+    rerunBlockers.push("This job's request (targets / cameras / methods) is unavailable.");
+  }
+  if (editObjects.length === 0) rerunBlockers.push("The assembly is empty.");
+  else if (lockedIndices.length === 0 && !keepUnlocked) rerunBlockers.push("Lock at least one piece (or keep the unlocked pieces).");
+  if (applyCurrent) {
+    if (overrides?.error) rerunBlockers.push("Fix the Custom overrides JSON.");
+    rerunBlockers.push(...boundsErrors(bounds, designOptions.unboundedAxis && rerunSingleView));
+  }
+
+  const rerun = async () => {
+    if (!jobReq || rerunBlockers.length) return;
+    const n = jobReq.targets.length;
+    const req: JobRequest = {
+      models_dir: jobReq.models_dir,
+      targets: [...jobReq.targets],
+      cameras: jobReq.cameras.slice(0, n),
+      methods: [...jobReq.methods],
+      preset: jobReq.preset,
+      initial: {
+        assembly: { objects: editObjects.map((o) => ({ ...o, locked: !!o.locked })) },
+        locked: lockedIndices,
+        keep_unlocked: keepUnlocked,
+      },
+    };
+    const ov = applyCurrent ? currentOverrides(rerunSingleView) : jobReq.overrides ?? {};
+    if (Object.keys(ov).length) req.overrides = ov;
+    setRerunning(true);
+    setRerunError(null);
+    try {
+      const { job_id } = await api.createJob(req);
+      openJob(job_id);
+      setViewIndex(null);
+      refreshJobs();
+    } catch (e) {
+      setRerunError(`Rerun failed: ${errorMessage(e)}`);
+    } finally {
+      setRerunning(false);
+    }
+  };
+
   // ---- HUD text ------------------------------------------------------------------------
   let hud: string;
   if (scene.editable) {
@@ -328,7 +443,11 @@ export function App() {
     const p = job?.methods?.[resolvedMethod];
     const live = p && p.status !== "done" ? " (live)" : "";
     const label = displayMethod === "best" && bestMethod ? `Best = ${METHOD_SHORT[resolvedMethod]}` : METHOD_SHORT[resolvedMethod];
-    hud = `Results · ${label}${live} · ${assembly ? `${assembly.objects?.length ?? 0} objects` : "no assembly yet"}`;
+    hud = `Results · ${label}${live} · ${assembly ? `${assembly.objects?.length ?? 0} objects` : "no assembly yet"}${
+      edits.edited ? " · edited" : ""
+    }${validSelection.length ? ` · ${validSelection.length} selected` : ""}${
+      editing?.gizmo ? ` · drag the gizmo to ${editing.gizmo.mode === "rotate" ? "rotate" : "move"}` : ""
+    }`;
   }
 
   return (
@@ -442,6 +561,41 @@ export function App() {
             onBoundsChange={changeBox}
             onViewAxisChange={changeViewAxis}
             hud={hud}
+            editing={editing}
+            sidePanel={
+              sceneMode === "results" && resolvedMethod && assembly ? (
+                <EditPanel
+                  methodLabel={METHOD_LABELS[resolvedMethod] ?? resolvedMethod}
+                  objects={editObjects}
+                  selection={validSelection}
+                  edited={edits.edited}
+                  canEdit={canEdit}
+                  pickHint={viewIndex !== null ? "Selection is disabled in Target View (switch to Free Orbit)." : null}
+                  gizmo={gizmo}
+                  onGizmo={setGizmo}
+                  onLockSelected={(locked) => {
+                    setLocked(selectedSet, locked);
+                    if (locked) setGizmo("off");
+                  }}
+                  onDeleteSelected={deleteSelected}
+                  onClearSelection={clearSelection}
+                  onLockAll={(locked) => setLocked(null, locked)}
+                  onReset={() => {
+                    edits.reset();
+                    setSelection([]);
+                    setGizmo("off");
+                  }}
+                  keepUnlocked={keepUnlocked}
+                  onKeepUnlocked={setKeepUnlocked}
+                  applyCurrent={applyCurrent}
+                  onApplyCurrent={setApplyCurrent}
+                  rerunBlockers={rerunBlockers}
+                  onRerun={() => void rerun()}
+                  rerunning={rerunning}
+                  rerunError={rerunError}
+                />
+              ) : null
+            }
           />
           {job?.comparison && (
             <ComparisonTable

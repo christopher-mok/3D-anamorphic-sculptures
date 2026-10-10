@@ -27,6 +27,7 @@ def assembly_to_dict(assembly: Assembly, library=None) -> dict:
                 "rotation6d": [float(x) for x in o.rotation6d],
                 "log_scale": float(o.log_scale),
                 "scale": float(np.exp(o.log_scale)),
+                "locked": bool(a.locked[i]),
             }
         )
     out = {"objects": objs, "object_count": len(objs)}
@@ -59,7 +60,8 @@ def assembly_from_dict(d: dict, library=None, device="cuda") -> Assembly:
         ls = torch.tensor([o["log_scale"] for o in objs], dtype=torch.float32, device=device)
     else:
         ls = torch.log(torch.tensor([o["scale"] for o in objs], dtype=torch.float32, device=device))
-    return Assembly(torch.tensor(ids, device=device), t, r6, ls)
+    locked = torch.tensor([bool(o.get("locked", False)) for o in objs], device=device)
+    return Assembly(torch.tensor(ids, device=device), t, r6, ls, locked)
 
 
 def save_assembly_json(assembly: Assembly, path, library=None, extra: dict | None = None) -> None:
