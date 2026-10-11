@@ -37,7 +37,7 @@ def test_per_model_scale_factors_affect_ranges_and_fixed_sizes():
     ]
     library = SimpleNamespace(entries=entries, device=torch.device("cpu"))
     base = {
-        "scale": {"min": 0.1, "max": 1.0, "mode": "free", "fixed": 0.2,
+        "scale": {"min": 0.1, "max": 1.0, "mode": "free", "fixed": 0.2, "global_factor": 2.0,
                   "native_factor": 0.5, "model_factors": {"small": 0.5, "large.fbx": 2.0}},
         "constraints": {"lambda_contain": 1, "lambda_collision": 1, "lambda_scale": 1,
                         "containment_tolerance": 0.01, "collision_margin": 0.01,
@@ -47,15 +47,15 @@ def test_per_model_scale_factors_affect_ranges_and_fixed_sizes():
     }
     cons = ConstraintEvaluator(library, None, _wrap(base))
     a = Assembly(torch.tensor([0, 1]), torch.zeros(2, 3), torch.zeros(2, 6), torch.log(torch.tensor([0.05, 2.0])))
-    assert cons.valid_mask(a, strict=False).tolist() == [True, True]
+    assert cons.valid_mask(a, strict=False).tolist() == [False, True]
 
     base["scale"]["mode"] = "fixed"
     fixed = ConstraintEvaluator(library, None, _wrap(base))
-    assert torch.allclose(torch.exp(fixed.fixed_log_scales), torch.tensor([0.1, 0.4]))
+    assert torch.allclose(torch.exp(fixed.fixed_log_scales), torch.tensor([0.2, 0.8]))
 
     base["scale"]["mode"] = "native"
     native = ConstraintEvaluator(library, None, _wrap(base))
-    assert torch.allclose(torch.exp(native.fixed_log_scales), torch.tensor([0.125, 0.25]))
+    assert torch.allclose(torch.exp(native.fixed_log_scales), torch.tensor([0.25, 0.5]))
 
 
 def test_model_library_selection_uses_only_requested_inputs(tmp_path, cfg):

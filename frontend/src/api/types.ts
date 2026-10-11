@@ -30,6 +30,7 @@ export interface ObjectInstance {
   rotation6d: number[];                 // 6 numbers (first two columns of R)
   log_scale: number;
   scale: number;
+  color?: Vec3 | null;       // linear/sRGB display color in [0,1]
   /** Must stay exactly fixed (lock-and-rerun). Absent = false. */
   locked?: boolean;
 }
@@ -55,7 +56,7 @@ export interface Metrics {
   renderer_calls: number;
 }
 
-export type MethodName = "beam" | "column_generation" | "sdf_ray" | "chained";
+export type MethodName = "chained";
 
 export interface MethodProgress {
   status: "pending" | "running" | "done" | "failed" | "cancelled" | "skipped";
@@ -94,7 +95,7 @@ export interface Comparison {
 export interface BoundingVolume { min: Vec3; max: Vec3 }
 
 export interface Preprocessing {
-  target_urls: string[];          // binary target masks (PNG, square)
+  target_urls: string[];          // aspect-preserving target previews (PNG, square canvas)
   cameras: Camera[];
   bounding_volume: BoundingVolume;
   hull_url: string | null;        // OBJ preview mesh of the visual hull
@@ -179,18 +180,12 @@ export interface MethodResultFile {
   config: Record<string, unknown>;
 }
 
-export const ALL_METHODS: MethodName[] = ["beam", "column_generation", "sdf_ray", "chained"];
+export const ALL_METHODS: MethodName[] = ["chained"];
 
 export const METHOD_LABELS: Record<MethodName, string> = {
-  beam: "Beam Constructive",
-  column_generation: "Column Generation",
-  sdf_ray: "SDF Ray Packing",
   chained: "Chained (SDF→CG→Beam)",
 };
 
 export const METHOD_SHORT: Record<MethodName, string> = {
-  beam: "Beam",
-  column_generation: "Column Generation",
-  sdf_ray: "SDF Ray",
   chained: "Chained",
 };

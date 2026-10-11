@@ -86,6 +86,11 @@ class BeamSearchOptimizer(OptimizationMethod):
             pairs, _ = ctx.constraints.conflicts(opt, entry.assembly)
             if pairs.shape[0]:
                 score[pairs[:, 0].unique()] = float("inf")
+        if ctx.targets.color_labels is not None:
+            from ...refinement.color import candidate_color_penalty
+
+            with torch.no_grad():
+                score = score + candidate_color_penalty(ctx, opt, ctx.render_instances(opt, rl))
         improves = torch.isfinite(score) & (score < entry.img_loss)  # must improve the image
         w_div = float(ctx.cfg.diversity.weight)
         if w_div > 0:  # rank by image score + diversity deficit of the resulting child

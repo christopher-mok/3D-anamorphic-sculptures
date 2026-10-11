@@ -133,7 +133,8 @@ class CandidateGenerator:
             pos[-n_exp:] = p2
         return pos
 
-    def _patches(self, W: torch.Tensor, view: torch.Tensor, uv_px: torch.Tensor, half_px: torch.Tensor, d: int) -> torch.Tensor:
+    def _patches(self, W: torch.Tensor, view: torch.Tensor, uv_px: torch.Tensor, half_px: torch.Tensor, d: int,
+                 mode: str = "bilinear") -> torch.Tensor:
         """Sample utility patches on the bank frame: -> [n, d, d]."""
         V, H, Wd = W.shape
         n = uv_px.shape[0]
@@ -146,7 +147,8 @@ class CandidateGenerator:
         for v in range(V):
             sel = (view == v).nonzero(as_tuple=True)[0]
             if len(sel):
-                out[sel] = F.grid_sample(W[v][None, None].expand(len(sel), 1, H, Wd), grid[sel], align_corners=False, padding_mode="zeros")[:, 0]
+                out[sel] = F.grid_sample(W[v][None, None].expand(len(sel), 1, H, Wd), grid[sel],
+                                        mode=mode, align_corners=False, padding_mode="zeros")[:, 0]
         return out
 
     def _slide_to_depth(self, pos: torch.Tensor, view: torch.Tensor, z: torch.Tensor, z_des: torch.Tensor):
@@ -207,6 +209,15 @@ class CandidateGenerator:
         col = uv_px[:, 0].round().long().clamp(0, w - 1)
         row = uv_px[:, 1].round().long().clamp(0, h - 1)
         r_px = torch.maximum(rad_u[view, row, col], 0.5 * rad_t[view, row, col]).clamp_min(1.0)
+        # Keep initial pieces inside a coherent perceptual color region. This is deliberately
+        # a soft initialization cap (later geometry refinement may cross a boundary), but it
+        # makes the chained search propose separate pieces for distinct major colors instead
+        # of one silhouette-perfect piece spanning all of them.
+        color_dist = ctx.targets.color_region_distance(h)
+        if color_dist is not None:
+            region_r = color_dist[view, row, col].clamp_min(1.0)
+            cap = float(ctx.cfg.targets.color.get("region_scale_cap", 1.25))
+            r_px = torch.minimum(r_px, region_r * cap)
         jitter = opts.scale_jitter[0] + (opts.scale_jitter[1] - opts.scale_jitter[0]) * torch.rand(n, device=self.device, generator=gen)
         cons = ctx.constraints
         if cons.scale_fixed:
@@ -235,6 +246,17 @@ class CandidateGenerator:
             bi = use_bank.nonzero(as_tuple=True)[0]
             half = FRAME * f[bi] * s[bi] / z[bi]
             patches = self._patches(W, view[bi], uv_px[bi], half, bank.d)
+            from ..loss.color_image import color_matching
+            if color_matching(ctx):
+                # Match the shape of the local color feature rather than a generic
+                # patch of full-frame coverage. This only guides proposal retrieval;
+                # the exact RGB objective remains free to cross region boundaries.
+                labels = ctx.targets.regions(h)
+                region_patches = self._patches(labels.float() + 1, view[bi], uv_px[bi], half, bank.d, mode="nearest") - 1
+                center = labels[view[bi], row[bi], col[bi]]
+                same = region_patches == center[:, None, None]
+                cost = patches.clamp_min(0).mean((-1, -2), keepdim=True).clamp_min(1e-4)
+                patches = torch.where(same, patches, -cost)
             scores = bank.score_patches(patches, opts.allowed_meshes)  # [nb, M*K]
             k = min(opts.top_k, scores.shape[1])
             top_s, top_i = scores.topk(k, dim=-1)

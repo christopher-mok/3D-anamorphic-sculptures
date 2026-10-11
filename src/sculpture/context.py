@@ -281,8 +281,11 @@ def build_context(
         # every eye position in the zone. They are ordinary views for every downstream component.
         cams = cams + [c for c, _ in zone]
         base = targets.base.cpu().numpy()
+        colors = targets.color_base.cpu().numpy() if targets.color_base is not None else None
+        expanded_colors = None if colors is None else [colors[v] for v in range(n_primary)] + [colors[v] for _, v in zone]
         targets = TargetSet([base[v] for v in range(n_primary)] + [base[v] for _, v in zone], device,
-                            list(targets.paths) + [targets.paths[v] for _, v in zone])
+                            list(targets.paths) + [targets.paths[v] for _, v in zone], expanded_colors,
+                            cfg.targets.get("color", {}), targets.mask_background)
 
     isotropic = True
     if cfg.bounding_volume.get("unbounded_view_axis", False):

@@ -12,15 +12,19 @@ interface ModelPanelProps {
   previewed: ReadonlySet<string>;
   onSelected: (name: string, selected: boolean) => void;
   onPreviewed: (name: string, previewed: boolean) => void;
+  globalScale: number;
+  onGlobalScale: (factor: number) => void;
   scaleFactors: Record<string, number>;
   onScaleFactor: (name: string, factor: number) => void;
+  fixedColors: Record<string, string | null>;
+  onFixedColor: (name: string, color: string | null) => void;
   loading: boolean;
   error: string | null;
 }
 
 export function ModelPanel({
   dir, onDirChange, onLoad, models, selected, previewed, onSelected, onPreviewed,
-  scaleFactors, onScaleFactor, loading, error,
+  globalScale, onGlobalScale, scaleFactors, onScaleFactor, fixedColors, onFixedColor, loading, error,
 }: ModelPanelProps) {
   return (
     <Section
@@ -51,6 +55,19 @@ export function ModelPanel({
         </div>
       )}
       <ErrorText>{error}</ErrorText>
+      <div className="field-row wide" title="Multiplier applied to every model, in addition to each model's individual scale">
+        <label>Global scale</label>
+        <input
+          className="num"
+          type="number"
+          min={0.01}
+          max={100}
+          step={0.05}
+          value={globalScale}
+          onChange={(e) => onGlobalScale(Number(e.target.value))}
+          aria-label="global model scale"
+        />
+      </div>
       {models && models.length === 0 && !loading && <div className="hint">No models found in this folder.</div>}
       {models && models.length > 0 && (
         <div className="model-grid">
@@ -78,6 +95,13 @@ export function ModelPanel({
                   aria-label={`${m.filename || m.name} scale`}
                 />
               </label>
+              <div className="model-color" title="Automatic assigns a separate target-matched color to every placed instance">
+                <select value={fixedColors[m.name] ? "fixed" : "auto"} onChange={(e) => onFixedColor(m.name, e.target.value === "fixed" ? (fixedColors[m.name] ?? "#808080") : null)}>
+                  <option value="auto">Auto color</option>
+                  <option value="fixed">Fixed color</option>
+                </select>
+                {fixedColors[m.name] && <input type="color" value={fixedColors[m.name] ?? "#808080"} onChange={(e) => onFixedColor(m.name, e.target.value)} aria-label={`${m.filename || m.name} fixed color`} />}
+              </div>
             </div>
           ))}
         </div>

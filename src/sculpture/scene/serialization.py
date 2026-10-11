@@ -28,6 +28,7 @@ def assembly_to_dict(assembly: Assembly, library=None) -> dict:
                 "log_scale": float(o.log_scale),
                 "scale": float(np.exp(o.log_scale)),
                 "locked": bool(a.locked[i]),
+                "color": ([float(x) for x in a.colors[i].cpu()] if a.colors is not None else None),
             }
         )
     out = {"objects": objs, "object_count": len(objs)}
@@ -61,7 +62,10 @@ def assembly_from_dict(d: dict, library=None, device="cuda") -> Assembly:
     else:
         ls = torch.log(torch.tensor([o["scale"] for o in objs], dtype=torch.float32, device=device))
     locked = torch.tensor([bool(o.get("locked", False)) for o in objs], device=device)
-    return Assembly(torch.tensor(ids, device=device), t, r6, ls, locked)
+    colors = None
+    if any(o.get("color") is not None for o in objs):
+        colors = torch.tensor([o.get("color") or [0.65, 0.65, 0.65] for o in objs], dtype=torch.float32, device=device)
+    return Assembly(torch.tensor(ids, device=device), t, r6, ls, locked, colors)
 
 
 def save_assembly_json(assembly: Assembly, path, library=None, extra: dict | None = None) -> None:

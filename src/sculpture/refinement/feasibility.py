@@ -52,6 +52,9 @@ def _fix_candidates(ctx, obj: Assembly) -> Assembly:
         t = eye + (obj.translation - eye) * f[:, None]
         k = len(f)
         parts.append(Assembly(obj.mesh_ids.expand(k).clone(), t, obj.rot6d.expand(k, 6).clone(), obj.log_scale.expand(k).clone()))
+    if obj.colors is not None:
+        for part in parts:
+            part.colors = obj.colors.expand(len(part), 3).clone()
     return Assembly.concat(parts)
 
 
@@ -105,8 +108,14 @@ def resolve_intersections(ctx, a: Assembly, rounds: int = 6, steps: int = 30) ->
                     ok[k] = False
             if ok.any():
                 with torch.no_grad():
-                    R_o = ctx.render(others, res)
-                    L = ctx.loss(soft_union(R_o[None], ctx.render_instances(cands, res)), 1.0)
+                    from ..loss.color_image import color_matching, ColorImageLoss, render_color
+                    if color_matching(ctx) and a.colors is not None:
+                        objective = ColorImageLoss(ctx)
+                        L = torch.stack([objective(render_color(ctx, Assembly.concat([others, cands[k]]), res))
+                                         for k in range(len(cands))])
+                    else:
+                        R_o = ctx.render(others, res)
+                        L = ctx.loss(soft_union(R_o[None], ctx.render_instances(cands, res)), 1.0)
                 L = torch.where(ok, L, torch.full_like(L, float("inf")))
                 a = replace_row(a, victim, cands[int(L.argmin())])
                 stats["fixed"] += 1

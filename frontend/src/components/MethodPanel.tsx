@@ -1,6 +1,5 @@
 // Steps 5–6: method selection and quality preset (with Custom JSON overrides).
 import type { MethodName } from "../api/types";
-import { ALL_METHODS, METHOD_LABELS } from "../api/types";
 import { ErrorText, Section, Segmented } from "./common";
 
 export type PresetChoice = "fast" | "default" | "high_quality" | "custom";
@@ -31,6 +30,7 @@ export interface DesignOptions {
   scaleMode: ScaleMode;         // scale.mode: optimized per piece / uniform fixed / from the model files
   fixedScaleValue: number;      // scale.fixed (world bounding radius of every piece)
   nativeFactor: number;         // scale.native_factor (world radius = original radius x factor)
+  matchWholeImage: boolean;     // targets.mask_background = false
   unboundedAxis: boolean;       // bounding_volume.unbounded_view_axis (single view only)
   diversityWeight: number;      // diversity.weight (0 = off)
   viewingZoneRadius: number;    // viewing_zone.radius (0 = off)
@@ -43,6 +43,7 @@ export const DEFAULT_DESIGN_OPTIONS: DesignOptions = {
   scaleMode: "free",
   fixedScaleValue: 0.15,
   nativeFactor: 0.3,
+  matchWholeImage: false,
   unboundedAxis: false,
   diversityWeight: 0,
   viewingZoneRadius: 0,
@@ -59,6 +60,7 @@ export function designOverrides(o: DesignOptions, singleView: boolean): Record<s
   if (o.scaleMode === "fixed") Object.assign(scale, { mode: "fixed", fixed: o.fixedScaleValue });
   if (o.scaleMode === "native") Object.assign(scale, { mode: "native", native_factor: o.nativeFactor });
   if (Object.keys(scale).length) out.scale = scale;
+  if (o.matchWholeImage) out.targets = { mask_background: false };
   if (o.unboundedAxis && singleView) out.bounding_volume = { unbounded_view_axis: true };
   if (o.diversityWeight > 0) out.diversity = { weight: o.diversityWeight };
   if (o.viewingZoneRadius > 0) {
@@ -113,27 +115,7 @@ export function MethodPanel(p: MethodPanelProps) {
   const parsed = p.preset === "custom" ? parseOverrides(p.overridesText) : null;
   return (
     <Section title="5 · Methods & quality">
-      <div className="checkbox-list">
-        {[...new Set([...ALL_METHODS, ...p.available])].map((m) => {
-          const supported = p.available.includes(m);
-          return (
-            <label
-              className="checkbox"
-              key={m}
-              style={supported ? undefined : { opacity: 0.5 }}
-              title={supported ? undefined : "Not offered by the connected backend (GET /api/defaults)"}
-            >
-              <input
-                type="checkbox"
-                disabled={!supported}
-                checked={supported && p.selected.includes(m)}
-                onChange={(e) => p.onToggle(m, e.target.checked)}
-              />
-              {METHOD_LABELS[m] ?? m}
-            </label>
-          );
-        })}
-      </div>
+      <div className="field-row"><label>Optimizer</label><span>Chained</span></div>
       <div className="field-row">
         <label>Quality</label>
         <select value={p.preset} onChange={(e) => p.onPreset(e.target.value as PresetChoice)}>
@@ -175,6 +157,10 @@ function DesignOptionsControls({
         <Segmented<ScaleMode> value={o.scaleMode} onChange={(scaleMode) => set({ scaleMode })} options={SCALE_MODES} />
       </div>
       <div className="hint small">{SCALE_MODES.find((m) => m.value === o.scaleMode)?.title}</div>
+      <label className="checkbox" title="Treat every image pixel, including the background, as an area that pieces should cover and color-match">
+        <input type="checkbox" checked={o.matchWholeImage} onChange={(e) => set({ matchWholeImage: e.target.checked })} />
+        Match whole image (include background)
+      </label>
       {o.scaleMode === "fixed" && (
         <div className="field-row wide" title="World bounding radius of every piece (scale.fixed)">
           <label>Piece radius</label>

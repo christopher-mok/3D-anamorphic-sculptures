@@ -26,6 +26,11 @@ log = logging.getLogger(__name__)
 @torch.no_grad()
 def marginal_contributions(ctx, a: Assembly, res: int) -> torch.Tensor:
     """L(X without O_i) - L(X) from binary instance masks: [N]."""
+    from ..loss.color_image import color_matching, ColorImageLoss, render_color
+    if color_matching(ctx) and a.colors is not None:
+        objective = ColorImageLoss(ctx)
+        full = objective(render_color(ctx, a, res))
+        return torch.stack([objective(render_color(ctx, a.without(i), res)) - full for i in range(len(a))]) if len(a) else torch.zeros(0, device=ctx.device)
     S = ctx.render_instances(a, res) > 0.5
     C = S.sum(0)
     L_full = ctx.loss((C > 0).float(), 1.0)
@@ -40,6 +45,7 @@ def replace_row(a: Assembly, i: int, new: Assembly) -> Assembly:
         torch.cat([a.rot6d[:i], new.rot6d, a.rot6d[i + 1 :]]),
         torch.cat([a.log_scale[:i], new.log_scale, a.log_scale[i + 1 :]]),
         torch.cat([a.locked[:i], new.locked, a.locked[i + 1 :]]),
+        (None if a.colors is None else torch.cat([a.colors[:i], new.colors if new.colors is not None else a.colors[i:i + 1], a.colors[i + 1:]])),
     )
 
 

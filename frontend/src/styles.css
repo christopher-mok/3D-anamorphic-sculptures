@@ -158,6 +158,9 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .model-toggles label { display: inline-flex; align-items: center; gap: 2px; cursor: pointer; }
 .model-scale { display: flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 10px; color: var(--muted); }
 .model-scale input { width: 100%; min-width: 0; padding: 2px 4px; font-size: 11px; }
+.model-color { display: flex; gap: 4px; align-items: center; margin-top: 4px; }
+.model-color select { min-width: 0; width: 100%; padding: 2px; font-size: 10px; }
+.model-color input[type="color"] { width: 26px; height: 22px; padding: 1px; flex: 0 0 auto; }
 
 /* ---------- targets & cameras ---------- */
 .target-selector { margin: 6px 0 10px; }

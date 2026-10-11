@@ -94,7 +94,7 @@ interface Metrics {
   renderer_calls: number;
 }
 
-type MethodName = "beam" | "column_generation" | "sdf_ray";
+type MethodName = "chained";
 
 interface MethodProgress {
   status: "pending" | "running" | "done" | "failed" | "cancelled" | "skipped";
@@ -165,6 +165,9 @@ interface JobRequest {
 Per-source-model scale multipliers may be supplied in `overrides.scale.model_factors`, keyed by
 the model stem (or filename), for example `{"scale":{"model_factors":{"bunny":1.5}}}`. The
 multiplier scales that model's optimized min/max range and its fixed/native size.
+Fixed model colors may be supplied as `overrides.targets.color.fixed_models`, keyed by model stem
+or filename, with CSS-style hex values such as `{"Chair":"#b87333"}`. Models absent from this map
+receive independently matched colors for each placed instance.
 
 ## Endpoints
 
@@ -208,7 +211,7 @@ The client can always fall back to polling `GET /api/jobs/{job_id}`.
 preprocessing/target_0.png, target_1.png, hull_preview.obj, hull.npz, diagnostics.json
 <method>/result.json      // {method, assembly: Assembly, metrics: Metrics, info, config}
 <method>/assembly.glb
-<method>/renders/view_0.png, view_1.png, overlay_0.png ...
+<method>/renders/view_0.png, view_1.png, overlay_0.png, color_view_0.png ...
 <method>/metrics.json, optimization.csv
 comparison.json, comparison.csv
 ```

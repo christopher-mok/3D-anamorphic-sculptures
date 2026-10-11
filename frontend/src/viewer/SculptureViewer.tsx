@@ -126,7 +126,7 @@ export function SculptureViewer({
           editing.onClear();
         }}
       >
-        <color attach="background" args={[s.silhouette ? "#ffffff" : "#14171c"]} />
+        <color attach="background" args={[s.silhouette || viewIndex !== null ? "#ffffff" : "#14171c"]} />
         <hemisphereLight args={["#e8eeff", "#3b3530", 1.4]} />
         <ambientLight intensity={0.15} />
         <directionalLight position={[5, 8, 6]} intensity={2.2} />

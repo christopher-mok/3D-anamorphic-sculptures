@@ -156,6 +156,65 @@ class NvdiffrastRenderer:
         mask = dr.antialias(mask, rast, clip, faces)
         return mask[..., 0].flip(1).reshape(k, V, H, W)
 
+    @torch.no_grad()
+    def render_instance_ids(self, assembly: Assembly, cameras, resolution, lod: str = "proxy") -> torch.Tensor:
+        """Rasterize the union once and map each winning triangle back to its instance."""
+        H, W = self._check_res(resolution)
+        V = len(cameras)
+        self.stats.record("instance_ids", V, V * H * W)
+        if len(assembly) == 0:
+            return torch.full((V, H, W), -1, dtype=torch.long, device=self.device)
+        all_pos, all_tri, owners, offset = [], [], [], 0
+        for m in torch.unique(assembly.mesh_ids).tolist():
+            idx = (assembly.mesh_ids == m).nonzero(as_tuple=True)[0]
+            world, faces = self._transformed(assembly, idx, m, lod)
+            k, nv = world.shape[:2]
+            all_pos.append(world.reshape(-1, 3))
+            tri = faces[None].long() + (torch.arange(k, device=self.device) * nv)[:, None, None] + offset
+            all_tri.append(tri.reshape(-1, 3))
+            owners.append(idx.repeat_interleave(len(faces)))
+            offset += k * nv
+        pos, tri, owner = torch.cat(all_pos), torch.cat(all_tri).int().contiguous(), torch.cat(owners)
+        pos_h = torch.cat([pos, torch.ones_like(pos[:, :1])], -1)
+        clip = torch.einsum("ni,vji->vnj", pos_h, self._mvps(cameras, (H, W))).contiguous()
+        rast, _ = dr.rasterize(self.ctx, clip, tri, (H, W))
+        fid = rast[..., 3].long() - 1
+        out = torch.full_like(fid, -1)
+        hit = fid >= 0
+        out[hit] = owner[fid[hit]]
+        return out.flip(1)
+
+    def render_rgba(self, assembly: Assembly, cameras, resolution, lod: str = "proxy") -> torch.Tensor:
+        """Depth-tested, antialiased flat instance colors with geometry/color gradients.
+
+        RGB is premultiplied by coverage; uncovered pixels have zero alpha.
+        Unlike silhouette unions, this preserves the color of the visible front piece.
+        """
+        H, W = self._check_res(resolution)
+        self.stats.record("rgba", len(cameras), len(cameras) * H * W)
+        if len(assembly) == 0:
+            return torch.zeros(len(cameras), H, W, 4, device=self.device)
+        positions, triangles, attributes, offset = [], [], [], 0
+        for m in torch.unique(assembly.mesh_ids).tolist():
+            idx = (assembly.mesh_ids == m).nonzero(as_tuple=True)[0]
+            world, faces = self._transformed(assembly, idx, m, lod)
+            k, nv = world.shape[:2]
+            positions.append(world.reshape(-1, 3))
+            triangles.append((faces[None].long() + (torch.arange(k, device=self.device) * nv)[:, None, None]
+                              + offset).reshape(-1, 3))
+            colors = (assembly.colors[idx] if assembly.colors is not None
+                      else torch.full((k, 3), 0.65, device=self.device))
+            attr = torch.cat([colors, torch.ones(k, 1, device=self.device)], -1)
+            attributes.append(attr[:, None].expand(k, nv, 4).reshape(-1, 4))
+            offset += k * nv
+        pos = torch.cat(positions)
+        tri = torch.cat(triangles).int().contiguous()
+        pos_h = torch.cat([pos, torch.ones_like(pos[:, :1])], -1)
+        clip = torch.einsum("ni,vji->vnj", pos_h, self._mvps(cameras, (H, W))).contiguous()
+        rast, _ = dr.rasterize(self.ctx, clip, tri, (H, W))
+        rgba, _ = dr.interpolate(torch.cat(attributes)[None].contiguous(), rast, tri)
+        return dr.antialias(rgba, rast, clip, tri).flip(1)
+
     # ------------------------------------------------------------ previews (server only)
     @torch.no_grad()
     def render_mesh_preview(self, mesh_id: int, resolution: int = 128) -> np.ndarray:

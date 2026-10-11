@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-MethodName = Literal["beam", "column_generation", "sdf_ray", "chained"]
+MethodName = Literal["chained"]
 
 
 class CameraModel(BaseModel):
@@ -32,7 +32,7 @@ class JobRequest(BaseModel):
     model_names: list[str] | None = None
     targets: list[str]
     cameras: list[CameraModel] | None = None
-    methods: list[MethodName] = Field(default_factory=lambda: ["beam", "column_generation", "sdf_ray"])
+    methods: list[MethodName] = Field(default_factory=lambda: ["chained"])
     preset: Literal["fast", "default", "high_quality"] = "default"
     overrides: dict[str, Any] | None = None
     initial: InitialAssembly | None = None

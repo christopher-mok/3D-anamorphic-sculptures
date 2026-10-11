@@ -46,9 +46,17 @@ def refine_assembly(
 ) -> RefineResult:
     """Adam on all continuous parameters; returns the best state seen."""
     res = int(resolution or ctx.working_resolution)
+    from ..loss.color_image import color_matching, ColorImageLoss, render_color
+    use_color = color_matching(ctx) and assembly.colors is not None
+    color_objective = ColorImageLoss(ctx) if use_color else None
+
+    def image_loss(a, progress):
+        if use_color:
+            return color_objective(render_color(ctx, a, res), progress)
+        return ctx.loss(ctx.render(a, res), progress)
     if len(assembly) == 0 or steps <= 0:
         with torch.no_grad():
-            L = float(ctx.loss(ctx.render(assembly, res), 1.0))
+            L = float(image_loss(assembly, 1.0))
         return RefineResult(assembly.detach(), L, L, L, 0)
     rc = ctx.cfg.refine
     a = assembly.params()
@@ -71,10 +79,9 @@ def refine_assembly(
     initial = None
     for it in range(steps):
         p = progress[0] + (progress[1] - progress[0]) * it / max(steps - 1, 1)
-        R = ctx.render(a, res)
-        L_sched = ctx.loss(R, p)
+        L_sched = image_loss(a, p)
         with torch.no_grad():
-            L_final = float(ctx.loss(R, 1.0))
+            L_final = float(image_loss(a, 1.0))
         pen, pen_terms = ctx.constraints.penalty(a, collisions=collisions, lambda_collision=collision_weight)
         total = L_sched + pen
         if w_ov > 0 and len(a) > 1:  # volumetric penetration (soft overlap volume, hull MC samples)
@@ -114,8 +121,7 @@ def refine_assembly(
                     a.log_scale.copy_(proj.log_scale)
     # evaluate the final state too
     with torch.no_grad():
-        R = ctx.render(a, res)
-        L_final = float(ctx.loss(R, 1.0))
+        L_final = float(image_loss(a, 1.0))
         pen, _ = ctx.constraints.penalty(a, collisions=collisions, lambda_collision=collision_weight)
         if L_final + float(pen) < best[0]:
             best = (L_final + float(pen), L_final, a.detach())
@@ -123,6 +129,6 @@ def refine_assembly(
     if project and ctx.strict:
         out, _ = ctx.constraints.project_inside(out)
         with torch.no_grad():
-            L_proj = float(ctx.loss(ctx.render(out, res), 1.0))
+            L_proj = float(image_loss(out, 1.0))
         best = (best[0] - best[1] + L_proj, L_proj, out)
     return RefineResult(out, best[1], best[0], initial, len(history), history)

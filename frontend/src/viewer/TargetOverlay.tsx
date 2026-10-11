@@ -25,7 +25,12 @@ export function TargetOverlay({ width, height, imageUrl, showImage, opacity, ble
   return (
     <div className="target-square" style={style}>
       {showImage && imageUrl && (
-        <img src={imageUrl} alt="target overlay" style={{ opacity, mixBlendMode: blend }} draggable={false} />
+        <img
+          src={imageUrl}
+          alt="target overlay"
+          style={{ opacity, mixBlendMode: blend, objectFit: "contain" }}
+          draggable={false}
+        />
       )}
     </div>
   );

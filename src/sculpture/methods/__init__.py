@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-METHOD_NAMES = ("beam", "column_generation", "sdf_ray", "chained")
+METHOD_NAMES = ("chained",)
 
 DISPLAY_NAMES = {
     "beam": "Beam Constructive",

@@ -34,13 +34,16 @@ class ConstraintEvaluator:
         self.n_collision = int(c.collision_samples)
         self.log_smin = math.log(float(cfg.scale.min))
         self.log_smax = math.log(float(cfg.scale.max))
+        global_factor = float(cfg.scale.get("global_factor", 1.0))
+        if not math.isfinite(global_factor) or global_factor <= 0:
+            raise ValueError("scale.global_factor must be a positive finite number")
         raw_factors = cfg.scale.get("model_factors", {})
         factors = []
         for entry in library.entries:
             value = float(raw_factors.get(entry.name, raw_factors.get(entry.filename, 1.0)))
             if not math.isfinite(value) or value <= 0:
                 raise ValueError(f"scale.model_factors[{entry.name!r}] must be a positive finite number")
-            factors.append(value)
+            factors.append(global_factor * value)
         self.model_scale_factors = torch.tensor(factors, dtype=torch.float32, device=library.device)
         self.log_model_scale_factors = torch.log(self.model_scale_factors)
         # fixed-scale mode: every instance has the same size; apparent size comes from depth only

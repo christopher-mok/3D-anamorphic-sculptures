@@ -62,3 +62,8 @@ class Renderer(Protocol):
     ) -> torch.Tensor:
         """Independent silhouette per instance: [N, V, H, W]."""
         ...
+
+    def render_instance_ids(self, assembly: Assembly, cameras: Sequence[PerspectiveCamera], resolution: tuple[int, int],
+                            lod: str = "proxy") -> torch.Tensor:
+        """Z-buffer-visible instance index per pixel [V,H,W], background = -1."""
+        ...

@@ -6,7 +6,7 @@ import { useGLTF } from "@react-three/drei";
 import type { ThreeEvent } from "@react-three/fiber";
 import {
   Box3, BufferGeometry, Color, Float32BufferAttribute, IcosahedronGeometry, InstancedMesh,
-  Material, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Vector3,
+  Material, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, SRGBColorSpace, Vector3,
 } from "three";
 import type { Assembly, ObjectInstance } from "../api/types";
 import { ErrorBoundary } from "../utils/ErrorBoundary";
@@ -85,13 +85,15 @@ interface InstancesCommon {
 
 const WHITE = new Color("#ffffff");
 
-function useInstanceMaterial(color: Color, silhouette: boolean, wireframe = false): Material {
+function useInstanceMaterial(color: Color, silhouette: boolean, wireframe = false, flatColor = false): Material {
   const material = useMemo<Material>(
     () =>
       silhouette
         ? new MeshBasicMaterial({ color: 0x000000 })
-        : new MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.05, wireframe }),
-    [color, silhouette, wireframe],
+        : flatColor
+          ? new MeshBasicMaterial({ color, wireframe, toneMapped: false })
+          : new MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.05, wireframe }),
+    [color, silhouette, wireframe, flatColor],
   );
   useEffect(() => () => material.dispose(), [material]);
   return material;
@@ -146,7 +148,7 @@ function InstancesView({
   group, silhouette, showBoxes, selected, onPick, parts, localBox, baseColor, wireframe,
 }: InstancesCommon & { parts: Part[]; localBox: Box3; baseColor: Color; wireframe: boolean }) {
   // White material; the per-instance colour carries the type colour and the edit cues.
-  const material = useInstanceMaterial(WHITE, silhouette, wireframe);
+  const material = useInstanceMaterial(WHITE, silhouette, wireframe, group.instances.some((o) => !!o.color));
   const lockMaterial = useMemo(
     () => new MeshBasicMaterial({ color: LOCKED_COLOR, wireframe: true, transparent: true, opacity: 0.85, depthWrite: false }),
     [],
@@ -161,7 +163,7 @@ function InstancesView({
     const lock = new Color(LOCKED_COLOR);
     const sel = new Color(SELECTED_COLOR);
     return instances.map((o, k) => {
-      const c = baseColor.clone();
+      const c = o.color ? new Color().setRGB(o.color[0], o.color[1], o.color[2], SRGBColorSpace) : baseColor.clone();
       if (o.locked) c.lerp(lock, 0.55);
       if (isSelected[k]) c.lerp(sel, 0.7);
       return c;

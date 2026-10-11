@@ -66,9 +66,11 @@ export function App() {
   const [modelsLoadedDir, setModelsLoadedDir] = useState<string | null>(null);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const [globalModelScale, setGlobalModelScale] = useState(1);
   const [modelScaleFactors, setModelScaleFactors] = useState<Record<string, number>>({});
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
   const [previewModels, setPreviewModels] = useState<Set<string>>(new Set());
+  const [fixedModelColors, setFixedModelColors] = useState<Record<string, string | null>>({});
 
   const [targets, setTargets] = useState<TargetInfo[]>([]);
   const [target1, setTarget1] = useState<string | null>(null);
@@ -163,6 +165,7 @@ export function App() {
         setModelScaleFactors((old) => Object.fromEntries(loaded.map((model) => [model.name, old[model.name] ?? 1])));
         setSelectedModels(new Set(loaded.map((model) => model.name)));
         setPreviewModels(new Set());
+        setFixedModelColors((old) => Object.fromEntries(loaded.map((model) => [model.name, old[model.name] ?? null])));
         setModelsLoadedDir(dir);
       })
       .catch((e) => setModelsError(errorMessage(e)))
@@ -187,9 +190,11 @@ export function App() {
   const startBlockers: string[] = [];
   if (!modelsDir.trim()) startBlockers.push("Model folder is empty.");
   if (models && modelsLoadedDir === modelsDir.trim() && selectedModels.size === 0) startBlockers.push("Select at least one model.");
+  if (!Number.isFinite(globalModelScale) || globalModelScale < 0.01 || globalModelScale > 100) {
+    startBlockers.push("Global model scale must be between 0.01 and 100.");
+  }
   if (!target1) startBlockers.push("Select Target Image 1.");
   if (target2Enabled && !target2) startBlockers.push("Select Target Image 2 (or disable it).");
-  if (methods.length === 0) startBlockers.push("Select at least one method.");
   if (Object.values(modelScaleFactors).some((v) => !Number.isFinite(v) || v < 0.01 || v > 100)) {
     startBlockers.push("Every model scale must be between 0.01 and 100.");
   }
@@ -215,7 +220,10 @@ export function App() {
     deepMerge(
       deepMerge(
         deepMerge(designOverrides(designOptions, singleView), boundsOverrides(bounds, designOptions.unboundedAxis && singleView)),
-        { scale: { model_factors: modelScaleFactors } },
+        {
+          scale: { global_factor: globalModelScale, model_factors: modelScaleFactors },
+          targets: { color: { fixed_models: Object.fromEntries(Object.entries(fixedModelColors).filter(([, value]) => !!value)) } },
+        },
       ),
       preset === "custom" && overrides?.value ? overrides.value : {},
     );
@@ -228,7 +236,7 @@ export function App() {
       ...(models && modelsLoadedDir === modelsDir.trim() ? { model_names: models.filter((m) => selectedModels.has(m.name)).map((m) => m.name) } : {}),
       targets: targetsReq,
       cameras: cameras.slice(0, targetsReq.length),
-      methods: ALL_METHODS.filter((m) => methods.includes(m)),
+      methods: ["chained"],
       preset: preset === "custom" ? "default" : preset,
     };
     const merged = currentOverrides(targetsReq.length === 1);
@@ -352,7 +360,9 @@ export function App() {
       const base = designOptions.scaleMode === "native"
         ? m.original_radius * designOptions.nativeFactor
         : designOptions.fixedScaleValue;
-      const scale = base * factor;
+      const scale = base * globalModelScale * factor;
+      const fixed = fixedModelColors[m.name];
+      const color = fixed ? ([1, 3, 5].map((i) => parseInt(fixed.slice(i, i + 2), 16) / 255) as Vec3) : null;
       const x = visible.length === 1 ? center[0] : setupVolume.min[0] + spanX * (i + 1) / (visible.length + 1);
       return {
         mesh_id: m.id,
@@ -363,10 +373,11 @@ export function App() {
         rotation6d: [1, 0, 0, 0, 1, 0],
         log_scale: Math.log(scale),
         scale,
+        color,
       };
     });
     return { objects };
-  }, [models, previewModels, setupVolume, modelScaleFactors, designOptions.scaleMode, designOptions.fixedScaleValue, designOptions.nativeFactor]);
+  }, [models, previewModels, setupVolume, globalModelScale, modelScaleFactors, fixedModelColors, designOptions.scaleMode, designOptions.fixedScaleValue, designOptions.nativeFactor]);
 
   const scene: SceneData = useMemo(() => {
     if (sceneMode === "results" && job) {
@@ -523,8 +534,12 @@ export function App() {
             onPreviewed={(name, on) => setPreviewModels((old) => {
               const next = new Set(old); if (on) next.add(name); else next.delete(name); return next;
             })}
+            globalScale={globalModelScale}
+            onGlobalScale={setGlobalModelScale}
             scaleFactors={modelScaleFactors}
             onScaleFactor={(name, factor) => setModelScaleFactors((old) => ({ ...old, [name]: factor }))}
+            fixedColors={fixedModelColors}
+            onFixedColor={(name, color) => setFixedModelColors((old) => ({ ...old, [name]: color }))}
             loading={modelsLoading}
             error={modelsError}
           />

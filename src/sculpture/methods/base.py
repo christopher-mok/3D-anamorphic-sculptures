@@ -159,6 +159,10 @@ class OptimizationMethod(ABC):
         R = self.ctx.render(assembly, res)
         m = mask_metrics(R, self.ctx.targets.mask(res))
         m["loss"] = float(self.ctx.loss(R, 1.0))
+        from ..loss.color_image import color_matching, ColorImageLoss, render_color
+        if color_matching(self.ctx):
+            m["silhouette_loss"] = m["loss"]
+            m["loss"] = float(ColorImageLoss(self.ctx)(render_color(self.ctx, assembly, res)))
         return m
 
     def consider_best(self, assembly: Assembly, loss: float | None = None) -> bool:
@@ -203,6 +207,10 @@ class OptimizationMethod(ABC):
                     pr = int(self.ctx.cfg.progress.preview_resolution)
                     V0 = self.ctx.num_primary_views or self.ctx.num_views
                     event["preview"] = self.ctx.render(assembly.detach(), pr).cpu().numpy()[:V0]
+                    from ..loss.color_image import color_matching, render_color
+                    if color_matching(self.ctx):
+                        rgba = render_color(self.ctx, assembly.detach(), pr)
+                        event["preview_rgb"] = (rgba[..., :3] + 1 - rgba[..., 3:4]).clamp(0, 1).cpu().numpy()[:V0]
                 event["assembly"] = assembly_to_dict(assembly, self.ctx.library)
             self.reporter.update(self.name, event)
         self.maybe_checkpoint()
@@ -279,7 +287,8 @@ class OptimizationMethod(ABC):
             if not bool(valid.all()):
                 self.info["removed_outside_hull"] = int((~valid).sum())
                 a = a[valid]
-        if float(ctx.cfg.diversity.weight) > 0 and ctx.cfg.diversity.get("swap_stage", True) and len(a) > 1:
+        from ..loss.color_image import color_matching
+        if not color_matching(ctx) and float(ctx.cfg.diversity.weight) > 0 and ctx.cfg.diversity.get("swap_stage", True) and len(a) > 1:
             self.phase = "diversity_swaps"
             a, st = rebalance_types(ctx, a, deadline_s=max(15.0, 0.15 * self.max_runtime))
             self.info["diversity_swaps"] = st

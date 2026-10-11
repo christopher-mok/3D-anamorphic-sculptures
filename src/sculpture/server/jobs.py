@@ -93,14 +93,16 @@ class JobReporter(ProgressReporter):
     def update(self, method: str, event: dict) -> None:
         job = self.job
         urls = []
-        preview = event.get("preview")
+        preview_rgb = event.get("preview_rgb")
+        preview = preview_rgb if preview_rgb is not None else event.get("preview")
         folder = self.method_dirs.get(method)
         if preview is not None and folder is not None:
             live = folder / "live"
             live.mkdir(parents=True, exist_ok=True)
             for v, m in enumerate(preview):
                 p = live / f"view_{v}.png"
-                Image.fromarray(((1.0 - np.clip(m, 0, 1)) * 255).astype(np.uint8)).save(p)
+                pixels = np.clip(m, 0, 1) if preview_rgb is not None else 1.0 - np.clip(m, 0, 1)
+                Image.fromarray((pixels * 255).astype(np.uint8)).save(p)
                 urls.append(output_url(p))
         with job.lock:
             pr = job.methods.setdefault(method, _empty_progress())

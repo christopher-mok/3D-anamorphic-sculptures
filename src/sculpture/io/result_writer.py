@@ -28,6 +28,25 @@ def overlay_png(render: np.ndarray, target: np.ndarray, path) -> None:
 
 
 @torch.no_grad()
+def write_color_renders(ctx, assembly, folder, resolution: int) -> list[Path]:
+    if assembly.colors is None:
+        return []
+    V = ctx.num_primary_views or ctx.num_views
+    rgba = ctx.renderer.render_rgba(assembly, ctx.cameras[:V], (resolution, resolution),
+                                   lod=str(ctx.cfg.evaluation.get("lod", "original")))
+    out = []
+    for v in range(V):
+        image = (rgba[v, ..., :3] + 1 - rgba[v, ..., 3:4]).clamp(0, 1)
+        path = Path(folder) / f"color_view_{v}.png"
+        Image.fromarray((image.cpu().numpy() * 255).astype(np.uint8)).save(path)
+        from ..loss.color_image import color_matching
+        if color_matching(ctx):
+            Image.fromarray((image.cpu().numpy() * 255).astype(np.uint8)).save(Path(folder) / f"view_{v}.png")
+        out.append(path)
+    return out
+
+
+@torch.no_grad()
 def write_renders(ctx, assembly, folder, resolution: int | None = None) -> list[Path]:
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
@@ -40,6 +59,7 @@ def write_renders(ctx, assembly, folder, resolution: int | None = None) -> list[
         mask_png(R[v], folder / f"view_{v}.png")
         overlay_png(R[v], T[v], folder / f"overlay_{v}.png")
         out += [folder / f"view_{v}.png", folder / f"overlay_{v}.png"]
+    out += write_color_renders(ctx, assembly, folder, res)
     return out
 
 

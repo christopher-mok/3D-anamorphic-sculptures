@@ -23,7 +23,7 @@ class Assembly:
     tensors for joint optimization.
     """
 
-    def __init__(self, mesh_ids, translation, rot6d, log_scale, locked=None):
+    def __init__(self, mesh_ids, translation, rot6d, log_scale, locked=None, colors=None):
         self.mesh_ids = torch.as_tensor(mesh_ids, dtype=torch.long)
         self.translation = translation
         self.rot6d = rot6d
@@ -35,6 +35,9 @@ class Assembly:
         # locked pieces (lock-and-rerun editing) are never moved, swapped or removed by any stage
         self.locked = (torch.zeros(n, dtype=torch.bool, device=translation.device) if locked is None
                        else torch.as_tensor(locked, dtype=torch.bool).to(translation.device))
+        self.colors = (None if colors is None else torch.as_tensor(colors, dtype=torch.float32, device=translation.device))
+        if self.colors is not None:
+            assert self.colors.shape == (n, 3), self.colors.shape
 
     # ---------------------------------------------------------------- creation
     @classmethod
@@ -67,12 +70,14 @@ class Assembly:
     @staticmethod
     def concat(assemblies: Iterable["Assembly"]) -> "Assembly":
         a = list(assemblies)
+        colors = None if any(x.colors is None for x in a) else torch.cat([x.colors for x in a])
         return Assembly(
             torch.cat([x.mesh_ids for x in a]),
             torch.cat([x.translation for x in a]),
             torch.cat([x.rot6d for x in a]),
             torch.cat([x.log_scale for x in a]),
             torch.cat([x.locked for x in a]),
+            colors,
         )
 
     # ---------------------------------------------------------------- views
@@ -104,7 +109,8 @@ class Assembly:
         idx = torch.as_tensor(idx, device=self.device)
         if idx.dtype == torch.bool:
             idx = idx.nonzero(as_tuple=True)[0]
-        return Assembly(self.mesh_ids[idx], self.translation[idx], self.rot6d[idx], self.log_scale[idx], self.locked[idx])
+        colors = None if self.colors is None else self.colors[idx]
+        return Assembly(self.mesh_ids[idx], self.translation[idx], self.rot6d[idx], self.log_scale[idx], self.locked[idx], colors)
 
     @property
     def n_locked(self) -> int:
@@ -116,14 +122,16 @@ class Assembly:
         return self[keep]
 
     def detach(self) -> "Assembly":
+        colors = None if self.colors is None else self.colors.detach().clone()
         return Assembly(self.mesh_ids.clone(), self.translation.detach().clone(), self.rot6d.detach().clone(),
-                        self.log_scale.detach().clone(), self.locked.clone())
+                        self.log_scale.detach().clone(), self.locked.clone(), colors)
 
     clone = detach
 
     def to(self, device) -> "Assembly":
+        colors = None if self.colors is None else self.colors.to(device)
         return Assembly(self.mesh_ids.to(device), self.translation.to(device), self.rot6d.to(device), self.log_scale.to(device),
-                        self.locked.to(device))
+                        self.locked.to(device), colors)
 
     def params(self) -> "Assembly":
         """Detached leaf copy with requires_grad=True on the continuous parameters."""
@@ -140,6 +148,7 @@ class Assembly:
             self.rot6d if rot6d is None else rot6d,
             self.log_scale if log_scale is None else log_scale,
             self.locked,
+            self.colors,
         )
 
     def normalized_rotations(self) -> "Assembly":

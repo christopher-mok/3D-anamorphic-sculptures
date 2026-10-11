@@ -52,11 +52,32 @@ class ChainedOptimizer(OptimizationMethod):
         from .. import get_method
 
         ctx, cfg = self.ctx, self.cfg
+        from ...loss.color_image import color_matching
+        if color_matching(ctx):
+            from ..color_constructive import ColorConstructiveOptimizer
+
+            sub_ctx = dataclasses.replace(ctx, cfg=_wrap(deep_merge(ctx.cfg, {"beam": {"max_runtime_s": self.time_left()}})))
+            stage = ColorConstructiveOptimizer(sub_ctx, self.output_dir / "stage_color",
+                                               _StageReporter(self.reporter, "color", self))
+            stage.intermediate = True
+            result = stage.run()
+            self.info.update(result.info)
+            self.best_assembly = result.assembly
+            if result.status == "cancelled":
+                raise _cancelled()
+            current = self.finalize(result.assembly)
+            self.best_assembly = current
+            return current
         ctx.bank, ctx.generator  # build shared lazy state once, before the stage contexts are copied
         total = self.max_runtime
         current = self.initial_assembly()
         stages = []
-        for i, (name, frac_key) in enumerate(STAGES):
+        # SDF packing and column generation optimize binary occupancy. With a full-frame
+        # target they collapse to a few giant square-filling pieces and erase image structure.
+        # Start the constructive beam stage empty instead; its candidates are bounded and
+        # scored by the target's perceptual color segments.
+        stage_specs = STAGES if ctx.targets.mask_background else (("beam", None),)
+        for i, (name, frac_key) in enumerate(stage_specs):
             left = self.time_left()
             if left < 3:
                 break
@@ -73,6 +94,11 @@ class ChainedOptimizer(OptimizationMethod):
                 self.best_assembly = res.assembly
                 raise _cancelled()
             current = res.assembly
+            if name == "sdf_ray" and current is not None and len(current) and ctx.targets.color_labels is not None:
+                from ...refinement.color import prune_color_incoherent
+
+                current, color_stats = prune_color_incoherent(ctx, current)
+                self.info["color_region_pruning"] = color_stats
             q = self.quick_eval(current)
             stages.append({"stage": name, "budget_s": round(budget, 1), "runtime_s": round(res.runtime_s, 1),
                            "objects": len(current), "loss": q["loss"], "min_view_iou": q["min_view_iou"]})
@@ -83,7 +109,14 @@ class ChainedOptimizer(OptimizationMethod):
         if current is None:
             current = Assembly.empty(ctx.device)
         self.best_assembly = current
-        return self.finalize(current)
+        current = self.finalize(current)
+        if ctx.targets.color_labels is not None:
+            from ...refinement.color import assign_instance_colors
+
+            current, color_stats = assign_instance_colors(ctx, current)
+            self.info["color_assignment"] = color_stats
+            self.best_assembly = current
+        return current
 
 
 def _cancelled():

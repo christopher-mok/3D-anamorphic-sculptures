@@ -29,6 +29,7 @@ max_objects: 200
 scale:
   min: 0.04
   max: 0.6
+  global_factor: 1.0       # multiplier applied to every input model before per-model factors
   mode: free                # free | fixed | native. fixed: every instance has radius `fixed`; native: each
   fixed: 0.15               #   model keeps its source-file size x native_factor. In both, pieces that must
   native_factor: 0.3        #   look bigger move toward the camera instead of growing.
@@ -59,8 +60,27 @@ silhouette_bank:
 targets:
   threshold: 0.5
   invert: auto              # auto | true | false  (true: dark pixels are foreground)
+  mask_background: true     # false: treat the complete image as the optimization target
   pad_fraction: 0.0         # extra empty border added when letterboxing to square
   working_resolution: 256
+  color:
+    enabled: true
+    reconstruct: true       # optimize visible color image, edges, and coverage together
+    reconstruction_weight: 2.0
+    edge_weight: 0.5
+    coverage_weight: 0.35    # uncovered dark/white areas still need actual pieces
+    spill_weight: 4.0
+    palette_size: 8          # perceptual Lab clusters; similar shades are averaged into regions
+    min_region_fraction: 0.015
+    min_segment_fraction: 0.003 # merge tiny connected regions to avoid noisy micro-pieces
+    primary_view_weight: 1.0
+    secondary_view_weight: 0.2
+    region_scale_cap: 1.25   # candidate radius cap relative to its local color-region radius
+    purity_threshold: 0.62   # prune large pieces spanning unrelated regions before later chain stages
+    coherence_weight: 0.12   # beam penalty for a candidate covering several distinct color regions
+    whole_image_coherence_weight: 1.5 # strong segmentation constraint when every pixel is a target
+    fixed_placement_weight: 0.25 # fixed-color models prefer target areas close to their chosen color
+    fixed_models: {}         # model name/filename -> "#rrggbb"; all others are automatic per instance
 
 hull:
   resolution: 128           # 256 for high quality

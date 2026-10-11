@@ -55,6 +55,12 @@ def evaluate_assembly(ctx, assembly: Assembly, runtime_s: float = 0.0, renderer_
     m["eval_lod"] = lod
     Rw = ctx.render(a, ctx.working_resolution)
     m["loss"] = float(ctx.loss(Rw, progress=1.0))
+    from ..loss.color_image import color_matching, ColorImageLoss, render_color
+    if color_matching(ctx):
+        m["silhouette_loss"] = m["loss"]
+        total, terms = ColorImageLoss(ctx)(render_color(ctx, a, res, lod=lod), return_terms=True)
+        m["loss"] = float(total)
+        m.update({f"image_{k}": float(v) for k, v in terms.items()})
     m.update(ctx.constraints.report(a))
     from ..loss.diversity import assembly_diversity, target_distribution, type_counts
 
@@ -74,6 +80,8 @@ def evaluate_assembly(ctx, assembly: Assembly, runtime_s: float = 0.0, renderer_
 def selection_score(metrics: dict, cfg) -> float:
     """Scalar used to pick the best method (higher is better)."""
     kind = cfg.evaluation.selection_metric
+    if "image_color" in metrics:
+        return -float(metrics["loss"])
     if kind in ("min_view_iou", "mean_iou", "recall"):
         return float(metrics[kind])
     if kind == "weighted":

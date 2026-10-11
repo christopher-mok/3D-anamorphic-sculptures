@@ -2,15 +2,13 @@
 
 This research codebase automatically designs floating sculptures in the style of Michael Murphy's view-dependent work. Each sculpture is made of many instances of meshes drawn from a model pool. Its perspective projection from one or two cameras should match one or two target silhouettes.
 
-The question the codebase is built to study is how best to optimize this mixed discrete/continuous problem. It contains **three independent solvers**. They share the representation, preprocessing, renderer, loss and evaluation. They differ only in how they search.
+The application exposes one **chained optimizer**, which combines three complementary internal stages in sequence.
 
-| Method | Paradigm |
+| Optimizer | Internal sequence |
 |---|---|
-| **1. Beam Constructive** (`beam`) | Constructive discrete search that grows the sculpture one instance at a time. A cheap utility screen filters candidates, then each survivor gets a local Adam lookahead. The method also runs a beam with diversity, non-conflicting multi-add, periodic global refinement, and swap / reseed / pose-jump repair. |
-| **2. Column Generation** (`column_generation`) | Global combinatorial selection of placements (columns) through a coverage MILP. LP duals become an image-space pricing map. New columns are priced with nvdiffrast gradients. Collision conflict cuts are added lazily. The binary MILP selection is followed by a raster polish. |
-| **3. SDF Ray Packing** (`sdf_ray`) | Continuous 3D optimization: every foreground camera ray must hit the soft union of the model SDFs, which gives wide-basin gradients. Weak objects are reseeded and objects are added on plateaus, then a raster polish follows. |
+| **Chained** (`chained`) | SDF ray packing builds global structure, anchored column generation fills holes, and beam growth/refinement finishes detail and repair. The internal stages are no longer exposed as standalone product choices. |
 
-The `README` sections below cover setup, inputs, running each method, the UI, outputs and troubleshooting. The HTTP API is documented in [docs/api.md](docs/api.md).
+The `README` sections below cover setup, inputs, optimization, the UI, outputs and troubleshooting. The HTTP API is documented in [docs/api.md](docs/api.md).
 
 ---
 
@@ -70,6 +68,19 @@ model stem or filename.
 Use the card's **Use** checkbox to include or exclude that source from optimization. **Preview** places
 the canonical model in the setup viewer at its configured world scale; previews are visual aids only
 and are not initial sculpture pieces.
+
+Color matching is enabled by default. Automatic models receive a separate color for every placed
+instance. A model card can instead specify one fixed color shared by all of that model's instances.
+The primary target view controls color; a second view has a lower default weight. Color runs use a
+constructive stage within Chained that minimizes visible RGB reconstruction, color edges, and
+coverage at multiple resolutions. Candidate colors are assigned before scoring, and joint refinement
+adjusts geometry and automatic colors together. Depth testing prevents hidden pieces from claiming
+an improvement. SLIC superpixels merged by adjacent color similarity guide proposals; region borders
+are not hard placement constraints. Diversity is a preference among useful proposals rather than an
+absolute charge that can make an empty image win.
+Enable **Match whole image (include background)** to match all original image pixels, including
+the background. Aspect ratio is preserved and square-canvas letterbox padding is excluded. Live and
+final previews show color. Set `targets.color.reconstruct: false` to use the legacy silhouette stages.
 
 Everything is cached under `cache/`.
 
@@ -337,7 +348,8 @@ outputs/run_001/
       result.json        # method, status, assembly, metrics, method info, cameras, full config
       metrics.json
       assembly.glb       # one node per instance (canonical mesh + world transform)
-      renders/view_v.png overlay_v.png   # overlay: gray = correct, red = missed, blue = spill
+      renders/view_v.png overlay_v.png color_view_v.png
+                                        # colored view uses final per-instance assignments
       optimization.csv   # per-iteration log
       checkpoint.json    (+ columns.npz for column generation)
   comparison.json  comparison.csv

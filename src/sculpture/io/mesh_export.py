@@ -25,19 +25,22 @@ def assembly_to_scene(assembly: Assembly, library, lod: str = "original", bake: 
     geoms = {}
     for i, o in enumerate(assembly.detach().to_instances()):
         e = library.entries[o.mesh_id]
-        if e.name not in geoms:
+        color_key = tuple(float(x) for x in assembly.colors[i].cpu()) if assembly.colors is not None else None
+        geom_key = (e.name, color_key)
+        if geom_key not in geoms:
             m = e.canonical_trimesh(lod)
-            color = (_PALETTE[o.mesh_id % len(_PALETTE)] * 255).astype(np.uint8)
+            rgb = assembly.colors[i].cpu().numpy() if assembly.colors is not None else _PALETTE[o.mesh_id % len(_PALETTE)]
+            color = (np.clip(rgb, 0, 1) * 255).astype(np.uint8)
             m.visual = trimesh.visual.ColorVisuals(m, face_colors=np.tile(np.append(color, 255), (len(m.faces), 1)))
-            geoms[e.name] = m
+            geoms[geom_key] = m
         T = o.world_matrix()
         node = f"obj_{i:04d}_{e.name}"
         if bake:
-            g = geoms[e.name].copy()
+            g = geoms[geom_key].copy()
             g.apply_transform(T)
             scene.add_geometry(g, node_name=node, geom_name=node)
         else:
-            scene.add_geometry(geoms[e.name], node_name=node, geom_name=e.name, transform=T)
+            scene.add_geometry(geoms[geom_key], node_name=node, geom_name=f"{e.name}_{i:04d}", transform=T)
     return scene
 
 
